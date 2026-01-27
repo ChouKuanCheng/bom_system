@@ -1,0 +1,134 @@
+version: 1.0
+
+# Global constraints for short-name generation
+code20:
+  ascii_only: true
+  include_compliance: false
+  include_temp: true
+  max_len: 20
+
+# Mappings used by Code20 encoder (all ASCII)
+mappings:
+  tolerance_iec:
+    "0.5%": D
+    "1%": F
+    "2%": G
+    "5%": J
+    "10%": K
+  power_code:
+    "1/16W": "6"
+    "1/10W": "A"
+    "1/8W": "8"
+    "1/4W": "4"
+    "1/2W": "2"
+    "1W": "1"
+  process_code:
+    SMT: S
+    DIP: D
+  # Temp codes for Code20 (canonical)
+  temp_code:
+    NP0: N
+    P100: P
+    N150: A
+    N750: B
+    U2J: U
+    X7R: 7
+    X5R: 5
+    X6S: 6
+    X7S: S
+    X8R: 8
+    Y5U: Y
+    Y5V: V
+    Z5U: Z
+
+# Category-specific templates
+categories:
+  RES:
+    # Human-readable (may include non-ASCII like Ω)
+    name20_template: "R{Resistance}{Power}{Tolerance}{Size}"
+    name20_drop_order: [Process_Type, Compliance, Temp_Coefficient]
+
+    # Code20: ASCII, no Compliance, includes Temp (if available)
+    # Format: R + res + pwr + tol + size + proc + temp
+    code20_template: "R{Resistance_ascii}{Power_code}{Tolerance_code}{Size}{Process_code}{Temp_code}"
+    code20_drop_order: [Temp_code]
+
+  CAP:
+    # Include Temp_Coefficient when available (NP0/X7R...) because you requested it
+    name20_template: "C{Capacitance}{Voltage}{Tolerance}{Size}{Temp_Coefficient}"
+    # If too long, drop in this order
+    name20_drop_order: [Process_Type, Compliance, Temp_Coefficient, Tolerance]
+
+    # Code20: C + cap + volt + tol + size + proc + temp
+    code20_template: "C{Cap_ascii}{Volt_ascii}{Tolerance_code}{Size}{Process_code}{Temp_code}"
+    code20_drop_order: [Volt_ascii]
+
+  IND:
+    name20_template: "L{Inductance}{Tolerance}{Size}"
+    name20_drop_order: [Process_Type, Compliance]
+
+    code20_template: "L{Ind_ascii}{Tolerance_code}{Size}{Process_code}{Temp_code}"
+    code20_drop_order: [Temp_code]
+
+  DIODE:
+    name20_template: "D{Type}{Package}{Pin_Count}"
+    name20_drop_order: [Pin_Count]
+    code20_template: ""
+
+  TRANSISTOR:
+    name20_template: "Q{Type}{Package}{Pin_Count}"
+    name20_drop_order: [Pin_Count]
+    code20_template: ""
+
+  IC:
+    # Per decision: no Code20
+    name20_template: "U{Type}{Package}{Pin_Count}"
+    name20_drop_order: [Type]
+    code20_template: ""
+
+  CONNECTOR:
+    name20_template: "CN{Pin_Count}{Package}"
+    name20_drop_order: [Package]
+    code20_template: ""
+
+  LED:
+    name20_template: "LED{Color}{Size}{Wavelength}"
+    name20_drop_order: [Wavelength]
+
+    code20_template: "E{Color_code}{Size}{Process_code}{Temp_code}"
+    code20_drop_order: [Temp_code]
+
+  CRYSTAL:
+    name20_template: "X{Frequency}{Size}{Package}"
+    name20_drop_order: [Package]
+
+    code20_template: "X{Freq_ascii}{Size}{Process_code}{Temp_code}"
+    code20_drop_order: [Temp_code]
+
+  SENSOR:
+    name20_template: "S{Type}{Package}{Pin_Count}"
+    name20_drop_order: [Pin_Count]
+    code20_template: ""
+
+  SWITCH:
+    name20_template: "SW{Type}{Package}"
+    name20_drop_order: [Package]
+    code20_template: ""
+
+  FUSE:
+    name20_template: "F{Current}{Voltage}{Package}"
+    name20_drop_order: [Package]
+
+    code20_template: "F{Curr_ascii}{Volt_ascii}{Process_code}{Temp_code}"
+    code20_drop_order: [Temp_code]
+
+# Optional mapping for LED color into single ASCII char for Code20.
+# If missing, implementation should fall back to first letter.
+aux_mappings:
+  led_color_code:
+    RED: R
+    GREEN: G
+    BLUE: B
+    WHITE: W
+    YELLOW: Y
+    AMBER: A

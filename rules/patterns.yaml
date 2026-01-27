@@ -1,0 +1,140 @@
+version: 1.0
+# Rule-based extractors and postrules.
+# Use these as: (1) fallback extraction when model misses, and (2) deterministic post-processing.
+
+extractors:
+  # Category (fallback). Prefer model Category when present.
+  - label: Category
+    name: category_res
+    regex: "\\bRES\\b|\\bRESISTOR\\b|\\bR\\s*\\d"
+    value: RES
+    priority: 100
+  - label: Category
+    name: category_cap
+    regex: "\\bCAP\\b|\\bCAPACITOR\\b|\\bC\\s*\\d"
+    value: CAP
+    priority: 95
+  - label: Category
+    name: category_ind
+    regex: "\\bIND\\b|\\bINDUCTOR\\b"
+    value: IND
+    priority: 90
+  - label: Category
+    name: category_connector
+    regex: "\\bCN\\d*\\b|\\bCONN\\b|\\bCONNECTOR\\b|\\bHEADER\\b"
+    value: CONNECTOR
+    priority: 80
+  - label: Category
+    name: category_led
+    regex: "\\bLED\\b"
+    value: LED
+    priority: 85
+  - label: Category
+    name: category_crystal
+    regex: "\\bCRYSTAL\\b|\\bXTAL\\b|\\bOSC\\b"
+    value: CRYSTAL
+    priority: 70
+  - label: Category
+    name: category_diode
+    regex: "\\bDIODE\\b|\\bSCHOTTKY\\b|\\bTVS\\b|\\bZENER\\b"
+    value: DIODE
+    priority: 60
+  - label: Category
+    name: category_ic
+    regex: "\\bIC\\b|\\bMCU\\b|\\bASIC\\b|\\bDSP\\b"
+    value: IC
+    priority: 55
+
+  # Process
+  - label: Process_Type
+    name: process_smt
+    regex: "\\bSMT\\b|\\bSMD\\b"
+    priority: 50
+  - label: Process_Type
+    name: process_dip
+    regex: "\\bDIP\\b"
+    priority: 50
+
+  # Package families (fallback)
+  - label: Package
+    name: pkg_sod
+    regex: "\\bSOD-\\d{3}\\b"
+    priority: 80
+  - label: Package
+    name: pkg_sot
+    regex: "\\bSOT-\\d{2,3}\\b|\\bSOT\\d{2,3}\\b"
+    priority: 80
+  - label: Package
+    name: pkg_to
+    regex: "\\bTO-\\d{2,3}\\b"
+    priority: 75
+  - label: Package
+    name: pkg_ic_families
+    regex: "\\bSOIC\\b|\\bSOP\\b|\\bTSSOP\\b|\\bQFP\\b|\\bLQFP\\b|\\bQFN\\b|\\bDFN\\b|\\bBGA\\b|\\bCSP\\b|\\bCOB\\b"
+    priority: 70
+
+  # Size codes (include your list + LED size)
+  - label: Size
+    name: size_chip
+    regex: "\\b01005\\b|\\b0201\\b|\\b0402\\b|\\b0603\\b|\\b0805\\b|\\b1206\\b|\\b1608\\b|\\b3216\\b"
+    priority: 90
+  - label: Size
+    name: size_led_2835
+    regex: "\\b2835\\b"
+    priority: 85
+
+  # Tolerance
+  - label: Tolerance
+    name: tol_percent
+    regex: "\\b\"?\\d+(?:\\.\\d+)?%\"?\\b"
+    priority: 90
+
+  # Frequency
+  - label: Frequency
+    name: freq_hz
+    regex: "\\b\"?\\d+(?:\\.\\d+)?\\s*(?:Hz|kHz|MHz|GHz)\"?\\b"
+    priority: 70
+
+  # Compliance
+  - label: Compliance
+    name: rohs
+    regex: "\\bRoHS\"?2?\\b"
+    priority: 60
+
+postrules:
+  # Rule (1): RES/CAP + size => CHIP package type
+  infer_chip_from_category_and_size:
+    enabled: true
+    categories: [RES, CAP]
+    size_list: [01005, 0201, 0402, 0603, 0805, 1608, 3216]
+    set_package_to: CHIP
+
+  # Rule (2): normalize package suffixes like SOD-323HE -> SOD-323
+  normalize_package_suffix:
+    enabled: true
+    patterns:
+      - match: "^(SOD-\\d{3}).*$"
+        replace: "\\1"
+      - match: "^(SOT-\\d{2,3}).*$"
+        replace: "\\1"
+
+  # Rule (6): split pin count from package strings like SOT23-3 / SOP-8 / SO8P
+  infer_pin_count_from_package:
+    enabled: true
+    dash_patterns:
+      - match: "^(SOT-?23)-(\\d+)$"
+        package_replace: "SOT-23"
+        pin_group: 2
+      - match: "^(SOP|SOIC|TSSOP)-?(\\d+)$"
+        package_group: 1
+        pin_group: 2
+    soXp_patterns:
+      - match: "^SO(\\d+)P$"
+        package_set: SOP
+        pin_group: 1
+
+  # Rule (7): CN -> CONNECTOR
+  cn_to_connector:
+    enabled: true
+    cn_regex: "\\bCN\\d*\\b"
+    set_category_to: CONNECTOR

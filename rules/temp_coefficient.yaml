@@ -1,0 +1,50 @@
+version: 1.0
+# Temperature coefficient / dielectric codes for capacitors.
+# Normalization rule: use NP0 as canonical for C0G/NP0.
+
+canonical_map:
+  C0G: NP0
+  NP0: NP0
+
+codes:
+  NP0:
+    temp_range_c: [-55, 125]
+    change: "plus_minus_30ppm_per_c"
+    note: "Canonical for C0G (NP0)."
+  P100:
+    temp_range_c: [-55, 125]
+    change: "plus_100ppm_per_c"
+  N150:
+    temp_range_c: [-55, 125]
+    change: "minus_150ppm_per_c"
+  N750:
+    temp_range_c: [-55, 125]
+    change: "minus_750ppm_per_c"
+  U2J:
+    temp_range_c: [-55, 125]
+    change: "plus_minus_750ppm_per_c"
+  X7R:
+    temp_range_c: [-55, 125]
+    change: "plus_minus_15_percent"
+  X5R:
+    temp_range_c: [-55, 85]
+    change: "plus_minus_15_percent"
+  X6S:
+    temp_range_c: [-55, 105]
+    change: "plus_minus_22_percent"
+  Y5V:
+    temp_range_c: [-30, 85]
+    change: "plus_22_minus_82_percent"
+  Z5U:
+    temp_range_c: [10, 85]
+    change: "plus_22_minus_56_percent"
+  X7S:
+    temp_range_c: [-55, 125]
+    change: "plus_minus_22_percent"
+  X8R:
+    temp_range_c: [-55, 150]
+    change: "plus_minus_15_percent"
+  Y5U:
+    temp_range_c: [-30, 85]
+    change: "plus_22_minus_56_percent"
+  # Y5V already defined above
