@@ -457,19 +457,19 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
     # 電容值（如 10UF/100NF/1PF，V17 修正：允許空格）
     cap_tokens = []
     for m in CAP_RE.finditer(s):
-        cap_tokens.append(f"{m.group(1)}{m.group(2).upper()}F")
+        cap_tokens.append(f"{m.group(1)}{m.group(2)}F")
     if cap_tokens:
         out["容量"] = shortest_cap_string(cap_tokens)
 
     # ===== V17 新增：電感值 (nH/uH/mH) =====
     m = IND_RE.search(s)
     if m:
-        out["電感值"] = f"{m.group(1)}{m.group(2).upper()}"
+        out["電感值"] = f"{m.group(1)}{m.group(2)}"
 
     # ===== V17 新增：電流 (mA/uA/A) =====
     m = CURRENT_RE.search(s)
     if m:
-        out["電流"] = f"{m.group(1)}{m.group(2).upper()}"
+        out["電流"] = f"{m.group(1)}{m.group(2)}"
 
     # 電壓
     # 優先使用範圍電壓（如 1.65~3.6V）。
@@ -509,7 +509,7 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
     # ===== V17 新增：針腳數 (8P, 2x8P, 16PIN) =====
     m = PIN_COUNT_RE.search(s)
     if m:
-        pin_str = m.group(1).upper().replace(" ", "")
+        pin_str = m.group(1).replace(" ", "")
         out["針腳數"] = pin_str
 
     # ===== V17 新增：間距 (P=2.54mm, L=5mm) =====
@@ -519,7 +519,7 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
     else:
         m = PITCH_DIM_RE.search(s)
         if m:
-            out["間距"] = m.group(0).upper()
+            out["間距"] = m.group(0)
 
     # ===== V17 新增：顏色 =====
     m = COLOR_RE.search(s)
@@ -529,7 +529,7 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
     # ===== V17 新增：頻率 (MHz/kHz/GHz) =====
     m = FREQ_RE.search(s)
     if m:
-        out["頻率"] = f"{m.group(1)}{m.group(2).upper()}"
+        out["頻率"] = f"{m.group(1)}{m.group(2)}"
 
     # ===== V17 新增：類型 (介質類型、電晶體極性等) =====
     m = TYPE_RE.search(s)
