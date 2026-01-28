@@ -1,6 +1,6 @@
 version: 1.0
-# Temperature coefficient / dielectric codes for capacitors.
-# Normalization rule: use NP0 as canonical for C0G/NP0.
+# 電容溫度係數/介電質代碼設定檔。
+# 正規化規則：使用 NP0 作為 C0G/NP0 的標準值。
 
 canonical_map:
   C0G: NP0
@@ -10,7 +10,7 @@ codes:
   NP0:
     temp_range_c: [-55, 125]
     change: "plus_minus_30ppm_per_c"
-    note: "Canonical for C0G (NP0)."
+    note: "C0G 的標準值（NP0）。"
   P100:
     temp_range_c: [-55, 125]
     change: "plus_100ppm_per_c"
@@ -47,4 +47,4 @@ codes:
   Y5U:
     temp_range_c: [-30, 85]
     change: "plus_22_minus_56_percent"
-  # Y5V already defined above
+  # Y5V 已在上方定義

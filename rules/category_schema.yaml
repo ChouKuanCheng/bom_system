@@ -1,29 +1,30 @@
 version: 1.0
-# High-level category spec used for validation, UI, and naming-template selection.
-# Category values are the normalized outputs used in your structured fields.
+# 類別定義檔
+# 用於驗證、UI 顯示及命名模板選擇。
+# Category 值是結構化欄位中使用的正規化輸出。
 
 categories:
   RES:
-    description: Resistor
+    description: 電阻
     enable_name20: true
     enable_code20: true
-    # Primary electrical value for this category
+    # 此類別的主要電氣值欄位
     value_field: Resistance
     required_fields_for_name20: [Resistance, Power, Tolerance, Size]
     required_fields_for_code20: [Resistance, Power, Tolerance, Size, Process_Type]
 
   CAP:
-    description: Capacitor
+    description: 電容
     enable_name20: true
     enable_code20: true
     value_field: Capacitance
     required_fields_for_name20: [Capacitance, Voltage, Tolerance, Size]
     required_fields_for_code20: [Capacitance, Voltage, Tolerance, Size, Process_Type]
-    # Temperature coefficient (dielectric) is important; include when available.
+    # 溫度係數（介電質）很重要；可用時應包含。
     optional_fields: [Temp_Coefficient]
 
   IND:
-    description: Inductor
+    description: 電感
     enable_name20: true
     enable_code20: true
     value_field: Inductance
@@ -31,31 +32,31 @@ categories:
     required_fields_for_code20: [Inductance, Tolerance, Size, Process_Type]
 
   DIODE:
-    description: Diode (incl. Schottky, TVS, Zener)
+    description: 二極體（含蕭特基、TVS、齊納）
     enable_name20: true
     enable_code20: false
     required_fields_for_name20: [Type, Package]
 
   TRANSISTOR:
-    description: Transistor (BJT/MOSFET)
+    description: 電晶體（BJT/MOSFET）
     enable_name20: true
     enable_code20: false
     required_fields_for_name20: [Type, Package]
 
   IC:
-    description: Integrated Circuit
+    description: 積體電路
     enable_name20: true
-    enable_code20: false  # per user decision
+    enable_code20: false  # 根據使用者決定
     required_fields_for_name20: [Type, Package, Pin_Count]
 
   CONNECTOR:
-    description: Connector
+    description: 連接器
     enable_name20: true
     enable_code20: false
     required_fields_for_name20: [Pin_Count]
 
   LED:
-    description: LED
+    description: 發光二極體
     enable_name20: true
     enable_code20: true
     required_fields_for_name20: [Color, Size]
@@ -63,38 +64,38 @@ categories:
     optional_fields: [Wavelength, Current]
 
   CRYSTAL:
-    description: Crystal/Oscillator
+    description: 石英晶體/振盪器
     enable_name20: true
     enable_code20: true
     required_fields_for_name20: [Frequency, Size]
     required_fields_for_code20: [Frequency, Size, Process_Type]
 
   SENSOR:
-    description: Sensor
+    description: 感測器
     enable_name20: true
     enable_code20: false
     required_fields_for_name20: [Type, Package]
 
   SWITCH:
-    description: Switch/Button
+    description: 開關/按鈕
     enable_name20: true
     enable_code20: false
     required_fields_for_name20: [Type]
 
   FUSE:
-    description: Fuse
+    description: 保險絲
     enable_name20: true
     enable_code20: true
     required_fields_for_name20: [Current, Voltage]
     required_fields_for_code20: [Current, Voltage, Process_Type]
 
   UNKNOWN:
-    description: Unclassified/Needs review
+    description: 未分類/需審核
     enable_name20: false
     enable_code20: false
 
-# Category resolution priority when multiple candidates exist.
-# Earlier items win.
+# 當存在多個候選類別時的優先順序。
+# 較前的項目優先。
 category_priority:
   - RES
   - CAP

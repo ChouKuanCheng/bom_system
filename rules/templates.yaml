@@ -1,13 +1,13 @@
 version: 1.0
 
-# Global constraints for short-name generation
+# 短名稱生成的全域限制
 code20:
   ascii_only: true
   include_compliance: false
   include_temp: true
   max_len: 20
 
-# Mappings used by Code20 encoder (all ASCII)
+# Code20 編碼器使用的對照表（全為 ASCII）
 mappings:
   tolerance_iec:
     "0.5%": D
@@ -25,7 +25,7 @@ mappings:
   process_code:
     SMT: S
     DIP: D
-  # Temp codes for Code20 (canonical)
+  # Code20 溫度代碼（標準值）
   temp_code:
     NP0: N
     P100: P
@@ -41,25 +41,25 @@ mappings:
     Y5V: V
     Z5U: Z
 
-# Category-specific templates
+# 各類別專用模板
 categories:
   RES:
-    # Human-readable (may include non-ASCII like Ω)
+    # 人類可讀格式（可包含非 ASCII 字元如 Ω）
     name20_template: "R{Resistance}{Power}{Tolerance}{Size}"
     name20_drop_order: [Process_Type, Compliance, Temp_Coefficient]
 
-    # Code20: ASCII, no Compliance, includes Temp (if available)
-    # Format: R + res + pwr + tol + size + proc + temp
+    # Code20：純 ASCII，不含 Compliance，包含 Temp（若有）
+    # 格式：R + res + pwr + tol + size + proc + temp
     code20_template: "R{Resistance_ascii}{Power_code}{Tolerance_code}{Size}{Process_code}{Temp_code}"
     code20_drop_order: [Temp_code]
 
   CAP:
-    # Include Temp_Coefficient when available (NP0/X7R...) because you requested it
+    # 當 Temp_Coefficient 可用時包含（NP0/X7R...），因為使用者要求
     name20_template: "C{Capacitance}{Voltage}{Tolerance}{Size}{Temp_Coefficient}"
-    # If too long, drop in this order
+    # 若太長，依此順序刪除
     name20_drop_order: [Process_Type, Compliance, Temp_Coefficient, Tolerance]
 
-    # Code20: C + cap + volt + tol + size + proc + temp
+    # Code20：C + cap + volt + tol + size + proc + temp
     code20_template: "C{Cap_ascii}{Volt_ascii}{Tolerance_code}{Size}{Process_code}{Temp_code}"
     code20_drop_order: [Volt_ascii]
 
@@ -81,7 +81,7 @@ categories:
     code20_template: ""
 
   IC:
-    # Per decision: no Code20
+    # 根據決定：不產生 Code20
     name20_template: "U{Type}{Package}{Pin_Count}"
     name20_drop_order: [Type]
     code20_template: ""
@@ -122,8 +122,8 @@ categories:
     code20_template: "F{Curr_ascii}{Volt_ascii}{Process_code}{Temp_code}"
     code20_drop_order: [Temp_code]
 
-# Optional mapping for LED color into single ASCII char for Code20.
-# If missing, implementation should fall back to first letter.
+# LED 顏色對照表（用於 Code20 的單一 ASCII 字元）。
+# 若缺少，實作應退回使用第一個字母。
 aux_mappings:
   led_color_code:
     RED: R

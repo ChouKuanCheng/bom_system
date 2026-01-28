@@ -17,13 +17,13 @@ import torch
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 
 
-# ---------- YAML ----------
+# ---------- YAML 載入 ----------
 def load_yaml(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-# ---------- Pre-NER ----------
+# ---------- NER 前處理 ----------
 def apply_text_replacements(text: str, normalize_cfg: Dict[str, Any]) -> str:
     out = text or ""
     for r in normalize_cfg.get("text_replacements", []):
@@ -33,7 +33,7 @@ def apply_text_replacements(text: str, normalize_cfg: Dict[str, Any]) -> str:
     return out
 
 
-# ---------- NER ----------
+# ---------- NER 推論 ----------
 def ner_predict(text, tokenizer, model, device):
     enc = tokenizer(
         text,
@@ -64,6 +64,7 @@ def ner_predict(text, tokenizer, model, device):
 
 
 def merge_wordpieces(items):
+    """合併 wordpiece（如 '##' 開頭的 token）為完整字串。"""
     merged = []
     buf_t, buf_l, buf_c = "", None, []
     def flush():
@@ -83,6 +84,7 @@ def merge_wordpieces(items):
 
 
 def aggregate_fields(merged):
+    """聚合欄位：將相同標籤的 token 串接。"""
     fields = {}
     confs = []
     for t,l,c in merged:
@@ -94,8 +96,9 @@ def aggregate_fields(merged):
     return out, (sum(confs)/len(confs) if confs else 0.0)
 
 
-# ---------- Post processing ----------
+# ---------- 後處理 ----------
 def cleanup_spacing(val: str) -> str:
+    """清理結構性空白（不改變單位大小寫）。"""
     if not val:
         return val
     val = re.sub(r"\s*/\s*", "/", val)
@@ -107,6 +110,7 @@ def cleanup_spacing(val: str) -> str:
 
 
 def normalize_category(fields: Dict[str,str]) -> Dict[str,str]:
+    """Category_raw -> Category 主分類正規化。"""
     out = dict(fields)
     raw = out.get("Category","")
     out["Category_raw"] = raw
@@ -131,6 +135,7 @@ def normalize_category(fields: Dict[str,str]) -> Dict[str,str]:
 
 
 def resistance_to_iec(val: str) -> str:
+    """將電阻值轉換為 IEC 標準格式（如 4K7）。"""
     if not val:
         return ""
     v = val.replace("Ω","").replace("ohm","").strip()
@@ -155,6 +160,7 @@ def resistance_to_iec(val: str) -> str:
 
 
 def capacitance_to_eia(val: str) -> str:
+    """將電容值轉換為 EIA 標準代碼（如 104）。"""
     if not val:
         return ""
     v = val.lower().replace("f","")
@@ -173,14 +179,14 @@ def capacitance_to_eia(val: str) -> str:
     return s if len(s)<=2 else s[:2]+str(len(s)-2)
 
 
-# ---------- Main ----------
+# ---------- 主程式 ----------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("-i","--input",required=True)
-    ap.add_argument("-o","--output",required=True)
-    ap.add_argument("--desc-col",default="Description")
-    ap.add_argument("--model-dir",required=True)
-    ap.add_argument("--rules-dir",required=True)
+    ap.add_argument("-i","--input",required=True, help="輸入 BOM Excel 路徑")
+    ap.add_argument("-o","--output",required=True, help="輸出 Excel 路徑")
+    ap.add_argument("--desc-col",default="Description", help="描述欄位名稱")
+    ap.add_argument("--model-dir",required=True, help="NER 模型資料夾路徑")
+    ap.add_argument("--rules-dir",required=True, help="規則設定檔資料夾路徑")
     args = ap.parse_args()
 
     rules = Path(args.rules_dir)
@@ -201,11 +207,11 @@ def main():
         merged = merge_wordpieces(ner)
         fields, conf = aggregate_fields(merged)
 
-        # spacing cleanup
+        # 結構性空白清理
         for k in list(fields.keys()):
             fields[k] = cleanup_spacing(fields[k])
 
-        # temperature handling
+        # 溫度係數處理
         if "Temp_Coefficient" in fields:
             fields["Temp_Coefficient_raw"] = fields["Temp_Coefficient"]
             fields["Temp_Coefficient"] = re.sub(r"\s+","",fields["Temp_Coefficient"])
@@ -213,10 +219,10 @@ def main():
                 fields["Temp_Coefficient"] = "NP0"
             fields["Temp_Code20"] = fields["Temp_Coefficient"]
 
-        # category
+        # 類別正規化
         fields = normalize_category(fields)
 
-        # IEC / EIA
+        # IEC / EIA 轉換
         fields["Resistance_IEC"] = resistance_to_iec(fields.get("Resistance",""))
         fields["Capacitance_EIA"] = capacitance_to_eia(fields.get("Capacitance",""))
 
@@ -226,7 +232,7 @@ def main():
         rows.append(out)
 
     pd.DataFrame(rows).to_excel(args.output,index=False)
-    print(f"Saved: {args.output}")
+    print(f"已儲存：{args.output}")
 
 
 if __name__ == "__main__":

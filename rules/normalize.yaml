@@ -1,77 +1,76 @@
-# normalize.yaml
-# Purpose:
-# 1) text_replacements: applied BEFORE NER (token classification)
-# 2) field_normalizations: applied AFTER NER aggregation (per field)
-# 3) process_map: normalize Process_Type while preserving raw
-
 version: "1.0"
+# 正規化設定檔
+# 用途：
+# 1) text_replacements: 在 NER（Token Classification）處理前套用
+# 2) field_normalizations: 在 NER 聚合後套用（針對各欄位）
+# 3) process_map: 正規化 Process_Type 同時保留原始值
 
 # -----------------------------
-# 1) Text-level replacements (pre-NER)
+# 1) 文字層級替換（NER 前處理）
 # -----------------------------
 text_replacements:
-  # Temperature code normalization (you specified: C0G -> NP0, prefer NP0)
+  # 溫度代碼正規化（需求：C0G -> NP0，偏好使用 NP0）
   - pattern: '\bC0G\b'
     replace: 'NP0'
     flags: 'i'
 
-  # Process wording normalization (for better consistency)
-  # Keep in mind: you want raw+normalized output, so this is only for pre-NER help.
+  # 製程用語正規化（提升一致性）
+  # 注意：需要保留原始值+正規化值輸出，所以這只是協助 NER 前處理。
   - pattern: '\bSMD\b'
     replace: 'SMT'
     flags: 'i'
 
-  # Common punctuation / separators cleanup (optional, safe)
+  # 常見標點符號/分隔符清理（可選，安全）
   - pattern: '[，、]'
     replace: ','
     flags: ''
 
 # -----------------------------
-# 2) Field-level normalizations (post-NER)
-#    Each item MUST be a dict with keys: field, pattern, replace (optional flags)
+# 2) 欄位層級正規化（NER 後處理）
+#    每個項目必須是包含以下鍵值的字典：field, pattern, replace（可選 flags）
 # -----------------------------
 field_normalizations:
-  # Package: normalize SOD-323HE -> SOD-323, keep only base part
+  # Package：正規化 SOD-323HE -> SOD-323，僅保留基本部分
   - field: 'Package'
     pattern: '(?i)\b(SOD-\d+)[A-Z]+\b'
     replace: '\1'
     flags: ''
 
-  # Package: normalize SOT-xxx tail letters (e.g., SOT-232TR -> SOT-232)
+  # Package：正規化 SOT-xxx 尾碼字母（如 SOT-232TR -> SOT-232）
   - field: 'Package'
     pattern: '(?i)\b(SOT-\d+)[A-Z]+\b'
     replace: '\1'
     flags: ''
 
-  # Package: normalize SOT23-3 / SOT23-5 style to SOT23 (Pin_Count handled elsewhere)
+  # Package：正規化 SOT23-3 / SOT23-5 格式為 SOT23（Pin_Count 另行處理）
   - field: 'Package'
     pattern: '(?i)\b(SOT\d{2})-\d+\b'
     replace: '\1'
     flags: ''
 
-  # Temp_Coefficient: ensure C0G becomes NP0 (backup)
+  # Temp_Coefficient：確保 C0G 轉為 NP0（備用規則）
   - field: 'Temp_Coefficient'
     pattern: '\bC0G\b'
     replace: 'NP0'
     flags: 'i'
 
-  # Process_Type: unify casing (backup)
+  # Process_Type：統一大小寫（備用規則）
   - field: 'Process_Type'
     pattern: '^(smt|smd|dip)$'
     replace: '\1'
     flags: 'i'
 
-  # Resistance: unify ohm symbol variants (for Name20 readability; Code20 will be ASCII anyway)
+  # Resistance：統一歐姆符號變體（供 Name20 可讀性；Code20 會是 ASCII）
   - field: 'Resistance'
     pattern: '(?i)\bohm\b'
     replace: 'Ω'
     flags: ''
 
 # -----------------------------
-# 3) Process normalization map (raw -> normalized)
-#    run_bom.py will output:
-#    - Process_Type_raw (original model output)
-#    - Process_Type (mapped normalized)
+# 3) 製程正規化對照表（原始值 -> 正規化值）
+#    run_bom.py 會輸出：
+#    - Process_Type_raw（模型原始輸出）
+#    - Process_Type（正規化後）
 # -----------------------------
 process_map:
   SMD: SMT

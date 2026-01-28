@@ -1,9 +1,9 @@
 version: 1.0
-# Rule-based extractors and postrules.
-# Use these as: (1) fallback extraction when model misses, and (2) deterministic post-processing.
+# 規則式提取器與後處理規則設定檔。
+# 用途：(1) 模型遺漏時的備用提取，(2) 確定性後處理。
 
 extractors:
-  # Category (fallback). Prefer model Category when present.
+  # 類別（備用規則）。若模型有輸出 Category 則優先使用模型結果。
   - label: Category
     name: category_res
     regex: "\\bRES\\b|\\bRESISTOR\\b|\\bR\\s*\\d"
@@ -45,7 +45,7 @@ extractors:
     value: IC
     priority: 55
 
-  # Process
+  # 製程
   - label: Process_Type
     name: process_smt
     regex: "\\bSMT\\b|\\bSMD\\b"
@@ -55,7 +55,7 @@ extractors:
     regex: "\\bDIP\\b"
     priority: 50
 
-  # Package families (fallback)
+  # 封裝族群（備用規則）
   - label: Package
     name: pkg_sod
     regex: "\\bSOD-\\d{3}\\b"
@@ -73,7 +73,7 @@ extractors:
     regex: "\\bSOIC\\b|\\bSOP\\b|\\bTSSOP\\b|\\bQFP\\b|\\bLQFP\\b|\\bQFN\\b|\\bDFN\\b|\\bBGA\\b|\\bCSP\\b|\\bCOB\\b"
     priority: 70
 
-  # Size codes (include your list + LED size)
+  # 尺寸代碼（含 LED 尺寸）
   - label: Size
     name: size_chip
     regex: "\\b01005\\b|\\b0201\\b|\\b0402\\b|\\b0603\\b|\\b0805\\b|\\b1206\\b|\\b1608\\b|\\b3216\\b"
@@ -83,33 +83,33 @@ extractors:
     regex: "\\b2835\\b"
     priority: 85
 
-  # Tolerance
+  # 容差
   - label: Tolerance
     name: tol_percent
     regex: "\\b\"?\\d+(?:\\.\\d+)?%\"?\\b"
     priority: 90
 
-  # Frequency
+  # 頻率
   - label: Frequency
     name: freq_hz
     regex: "\\b\"?\\d+(?:\\.\\d+)?\\s*(?:Hz|kHz|MHz|GHz)\"?\\b"
     priority: 70
 
-  # Compliance
+  # 合規性
   - label: Compliance
     name: rohs
     regex: "\\bRoHS\"?2?\\b"
     priority: 60
 
 postrules:
-  # Rule (1): RES/CAP + size => CHIP package type
+  # 規則 (1)：RES/CAP + size => CHIP 封裝類型
   infer_chip_from_category_and_size:
     enabled: true
     categories: [RES, CAP]
     size_list: [01005, 0201, 0402, 0603, 0805, 1608, 3216]
     set_package_to: CHIP
 
-  # Rule (2): normalize package suffixes like SOD-323HE -> SOD-323
+  # 規則 (2)：正規化封裝尾碼，如 SOD-323HE -> SOD-323
   normalize_package_suffix:
     enabled: true
     patterns:
@@ -118,7 +118,7 @@ postrules:
       - match: "^(SOT-\\d{2,3}).*$"
         replace: "\\1"
 
-  # Rule (6): split pin count from package strings like SOT23-3 / SOP-8 / SO8P
+  # 規則 (6)：從封裝字串拆分腳位數，如 SOT23-3 / SOP-8 / SO8P
   infer_pin_count_from_package:
     enabled: true
     dash_patterns:
@@ -133,7 +133,7 @@ postrules:
         package_set: SOP
         pin_group: 1
 
-  # Rule (7): CN -> CONNECTOR
+  # 規則 (7)：CN -> CONNECTOR
   cn_to_connector:
     enabled: true
     cn_regex: "\\bCN\\d*\\b"

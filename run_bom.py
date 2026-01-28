@@ -11,7 +11,7 @@ from transformers import AutoTokenizer, AutoModelForTokenClassification
 
 
 # -----------------------
-# YAML loading utilities
+# YAML 載入工具
 # -----------------------
 def load_yaml(path: Path) -> Dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
@@ -19,12 +19,12 @@ def load_yaml(path: Path) -> Dict[str, Any]:
 
 
 # -----------------------
-# Normalization (text)
+# 文字正規化
 # -----------------------
 def apply_text_replacements(text: str, normalize_cfg: Dict[str, Any]) -> str:
     """
-    Apply normalize.yaml text-level replacements BEFORE NER.
-    Expected structure (example):
+    在 NER 處理前套用 normalize.yaml 的文字層級替換規則。
+    預期結構範例：
       text_replacements:
         - {pattern: "C0G", replace: "NP0"}
         - {pattern: "SMD", replace: "SMT"}
@@ -44,19 +44,19 @@ def apply_text_replacements(text: str, normalize_cfg: Dict[str, Any]) -> str:
 
 
 def to_ascii(s: str) -> str:
-    """Make Code20 ASCII-safe. You decided Ω should be ASCII, so map Ω->R etc."""
+    """將 Code20 轉為 ASCII 安全格式。根據需求將 Ω 對應為 R 等。"""
     if s is None:
         return ""
-    # Common mappings for your constraints
+    # 常見對應規則
     s = s.replace("Ω", "R")
     s = s.replace("ohm", "R").replace("Ohm", "R").replace("OHM", "R")
-    # Remove any remaining non-ascii chars defensively
+    # 防禦性移除剩餘的非 ASCII 字元
     s = s.encode("ascii", errors="ignore").decode("ascii")
     return s
 
 
 # -----------------------
-# NER inference
+# NER 推論
 # -----------------------
 def ner_predict(
     text: str,
@@ -65,8 +65,8 @@ def ner_predict(
     device: torch.device,
 ) -> Tuple[List[str], List[str], List[float]]:
     """
-    Returns: tokens, labels, confidences per token (simple softmax max prob).
-    Uses tokenizer wordpiece tokens.
+    回傳值：tokens（標記）、labels（標籤）、每個 token 的信心度（簡單 softmax 最大機率）。
+    使用 tokenizer 的 wordpiece tokens。
     """
     if not text:
         return [], [], []
@@ -78,7 +78,7 @@ def ner_predict(
         max_length=512,
         return_offsets_mapping=True,
     )
-    offset_mapping = enc.pop("offset_mapping")[0].tolist()  # (start,end) per token
+    offset_mapping = enc.pop("offset_mapping")[0].tolist()  # 每個 token 的 (start, end)
     enc = {k: v.to(device) for k, v in enc.items()}
 
     with torch.no_grad():
@@ -92,12 +92,12 @@ def ner_predict(
     labels = [id2label[int(i)] for i in pred_ids.cpu().tolist()]
     conf_list = confs.cpu().tolist()
 
-    # Remove special tokens ([CLS], [SEP], [PAD])
+    # 移除特殊標記（[CLS]、[SEP]、[PAD]）
     cleaned_tokens, cleaned_labels, cleaned_confs = [], [], []
     for tok, lab, cf, (st, en) in zip(tokens, labels, conf_list, offset_mapping):
         if tok in (tokenizer.cls_token, tokenizer.sep_token, tokenizer.pad_token):
             continue
-        # Ignore tokens with empty offsets (can happen)
+        # 忽略偏移量為空的 token（可能發生）
         if st == en == 0 and tok.startswith("["):
             continue
         cleaned_tokens.append(tok)
@@ -108,12 +108,12 @@ def ner_predict(
 
 
 # -----------------------
-# Aggregation: token labels -> field dict
+# 聚合：token 標籤 -> 欄位字典
 # -----------------------
 def _merge_wordpieces(tokens: List[str], labels: List[str], confs: List[float]) -> List[Tuple[str, str, float]]:
     """
-    Merge wordpieces like '##' tokens into full strings.
-    Returns list of (text, label, avg_conf).
+    合併 wordpiece（如 '##' 開頭的 token）為完整字串。
+    回傳 (text, label, avg_conf) 的列表。
     """
     merged: List[Tuple[str, str, float]] = []
     buff_txt, buff_lab, buff_confs = "", None, []
@@ -126,30 +126,30 @@ def _merge_wordpieces(tokens: List[str], labels: List[str], confs: List[float]) 
 
     for tok, lab, cf in zip(tokens, labels, confs):
         if tok.startswith("##"):
-            # continuation
+            # 延續前一個 token
             buff_txt += tok[2:]
             buff_confs.append(cf)
             continue
-        # new token starts
+        # 新 token 開始
         flush()
         buff_txt = tok
         buff_lab = lab
         buff_confs = [cf]
     flush()
-    # Cleanup token artifacts
+    # 清理 token 中的人工符號
     merged2 = []
     for t, l, c in merged:
-        t = t.replace("▁", "")  # just in case
+        t = t.replace("▁", "")  # 以防萬一
         merged2.append((t, l, c))
     return merged2
 
 
 def aggregate_fields(merged_tokens: List[Tuple[str, str, float]]) -> Tuple[Dict[str, str], float]:
     """
-    Very simple aggregation:
-      - concatenate tokens by same label
-      - keep best confidence label segments
-    Returns fields dict + an overall confidence estimate.
+    簡易聚合邏輯：
+      - 將相同標籤的 token 串接
+      - 保留最佳信心度的標籤區段
+    回傳欄位字典 + 整體信心度估計值。
     """
     fields: Dict[str, List[Tuple[str, float]]] = {}
     overall_confs = []
@@ -160,10 +160,10 @@ def aggregate_fields(merged_tokens: List[Tuple[str, str, float]]) -> Tuple[Dict[
             continue
         fields.setdefault(lab, []).append((txt, cf))
 
-    # join tokens for each label
+    # 合併每個標籤的 tokens
     out: Dict[str, str] = {}
     for lab, items in fields.items():
-        # join with '' for units-attached tokens, else space—here we use simple heuristic
+        # 對於單位連接的 token 用 '' 合併，否則用空格——這裡使用簡單啟發式
         parts = [t for t, _ in items]
         val = " ".join(parts)
         val = val.replace(" ,", ",").replace(" .", ".")
@@ -174,16 +174,16 @@ def aggregate_fields(merged_tokens: List[Tuple[str, str, float]]) -> Tuple[Dict[
 
 
 # -----------------------
-# Post rules & field normalization
+# 後處理規則與欄位正規化
 # -----------------------
 def normalize_fields(fields: Dict[str, str], normalize_cfg: Dict[str, Any], temp_cfg: Dict[str, Any]) -> Dict[str, str]:
     """
-    Apply normalize.yaml field-level normalizations.
-    Also apply temp coefficient canonicalization (C0G->NP0 etc).
+    套用 normalize.yaml 的欄位層級正規化。
+    同時套用溫度係數標準化（C0G->NP0 等）。
     """
     out = dict(fields)
 
-    # Field-level regex replacements
+    # 欄位層級正規表達式替換
     field_rules = normalize_cfg.get("field_normalizations", [])
     for r in field_rules:
         fld = r.get("field")
@@ -194,8 +194,8 @@ def normalize_fields(fields: Dict[str, str], normalize_cfg: Dict[str, Any], temp
         if fld and pattern and fld in out and out[fld]:
             out[fld] = re.sub(pattern, repl, out[fld], flags=re_flags).strip()
 
-    # Temp code canonicalization using temp_coefficient.yaml
-    # Expect temp_cfg like:
+    # 使用 temp_coefficient.yaml 進行溫度代碼標準化
+    # 預期 temp_cfg 格式如：
     #  codes:
     #    NP0: {aliases: ["NP0","C0G"], ...}
     temp_codes = temp_cfg.get("codes", {})
@@ -210,7 +210,7 @@ def normalize_fields(fields: Dict[str, str], normalize_cfg: Dict[str, Any], temp
         if canonical:
             out["Temp_Coefficient"] = canonical
 
-    # Process raw + normalized
+    # 製程原始值 + 正規化值
     proc_raw = out.get("Process_Type", "")
     if proc_raw:
         out["Process_Type_raw"] = proc_raw
@@ -224,12 +224,12 @@ def normalize_fields(fields: Dict[str, str], normalize_cfg: Dict[str, Any], temp
 
 def apply_postrules(fields: Dict[str, str], patterns_cfg: Dict[str, Any]) -> Dict[str, str]:
     """
-    Hook for patterns.yaml logic.
-    MVP: keep simple + safe. Add more rules iteratively.
+    patterns.yaml 邏輯的掛鉤點。
+    MVP 版本：保持簡單安全。可迭代新增更多規則。
     """
     out = dict(fields)
 
-    # Example: if Package has SOD-323HE -> SOD-323 (backup)
+    # 範例：若 Package 包含 SOD-323HE -> SOD-323（備用規則）
     pkg = out.get("Package", "")
     if pkg:
         m = re.search(r"(SOD-\d+)", pkg, flags=re.IGNORECASE)
@@ -239,14 +239,14 @@ def apply_postrules(fields: Dict[str, str], patterns_cfg: Dict[str, Any]) -> Dic
         if m2 and "SOD" not in out["Package"]:
             out["Package"] = m2.group(1).upper().replace("-", "")
 
-    # Infer CHIP for RES/CAP + Size (your rule 1)
+    # 為 RES/CAP + Size 推斷 CHIP 封裝（規則 1）
     cat = out.get("Category", "").upper()
     size = out.get("Size", "").upper() or out.get("Package_Size", "").upper()
     if cat in ("RES", "CAP") and size in ("01005","0201","0402","0603","0805","1608","3216"):
         out["Package"] = "CHIP"
         out["Package_Size"] = size
 
-    # If Size exists but Package_Size empty, fill it
+    # 若 Size 存在但 Package_Size 為空，則填入
     if out.get("Size") and not out.get("Package_Size"):
         out["Package_Size"] = out["Size"].upper()
 
@@ -254,7 +254,7 @@ def apply_postrules(fields: Dict[str, str], patterns_cfg: Dict[str, Any]) -> Dic
 
 
 # -----------------------
-# Name20 / Code20 generation
+# Name20 / Code20 生成
 # -----------------------
 def build_name20(fields: Dict[str, str], templates_cfg: Dict[str, Any]) -> str:
     cat = fields.get("Category", "").upper()
@@ -263,7 +263,7 @@ def build_name20(fields: Dict[str, str], templates_cfg: Dict[str, Any]) -> str:
     if not tpl:
         return ""
 
-    # Fill variables
+    # 填入變數
     ctx = {
         "res": fields.get("Resistance", ""),
         "cap": fields.get("Capacitance", ""),
@@ -281,15 +281,15 @@ def build_name20(fields: Dict[str, str], templates_cfg: Dict[str, Any]) -> str:
     }
 
     s = tpl.format(**ctx)
-    s = re.sub(r"\s+", "", s)  # remove spaces
-    # enforce 20 chars (character count). You can implement a smarter compression later.
+    s = re.sub(r"\s+", "", s)  # 移除空格
+    # 強制限制 20 字元。後續可實作更智慧的壓縮方式。
     return s[:20]
 
 
 def build_code20(fields: Dict[str, str], templates_cfg: Dict[str, Any], category_schema: Dict[str, Any]) -> str:
     cat = fields.get("Category", "").upper()
     cat_spec = (category_schema.get("categories") or {}).get(cat, {})
-    # IC no Code20
+    # IC 不產生 Code20
     if cat == "IC" or not cat_spec.get("enable_code20", False):
         return ""
 
@@ -297,7 +297,7 @@ def build_code20(fields: Dict[str, str], templates_cfg: Dict[str, Any], category
     if not tpl:
         return ""
 
-    # mappings (tolerance code, power code, process code)
+    # 對應表（容差代碼、功率代碼、製程代碼）
     maps = templates_cfg.get("mappings", {})
 
     tol = fields.get("Tolerance", "")
@@ -307,7 +307,7 @@ def build_code20(fields: Dict[str, str], templates_cfg: Dict[str, Any], category
     proc_norm = fields.get("Process_Type", "")
     proc_code = maps.get("process_code", {}).get(proc_norm, "")
 
-    # value normalizations for ASCII
+    # 值正規化為 ASCII
     res_ascii = to_ascii(fields.get("Resistance", ""))
     cap_ascii = to_ascii(fields.get("Capacitance", ""))
     ind_ascii = to_ascii(fields.get("Inductance", ""))
@@ -322,27 +322,27 @@ def build_code20(fields: Dict[str, str], templates_cfg: Dict[str, Any], category
         "tol": tol_code,
         "size": to_ascii(fields.get("Package_Size", "") or fields.get("Size", "")),
         "proc": proc_code,
-        "temp": temp_ascii,  # Q3=C: temp always in Code20
-        # Compliance intentionally NOT included
+        "temp": temp_ascii,  # Q3=C：temp 一律包含在 Code20 中
+        # Compliance 刻意不包含
     }
 
     code = tpl.format(**ctx)
     code = to_ascii(code)
-    code = re.sub(r"[^A-Za-z0-9]+", "", code)  # keep strictly alnum
+    code = re.sub(r"[^A-Za-z0-9]+", "", code)  # 僅保留英數字
     return code[:20]
 
 
 # -----------------------
-# Main
+# 主程式
 # -----------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("-i", "--input", required=True, help="Input BOM Excel path")
-    ap.add_argument("-o", "--output", required=True, help="Output Excel path")
-    ap.add_argument("--sheet", default=0, help="Sheet index or name (default 0)")
-    ap.add_argument("--desc-col", default="Description", help="Description column name")
-    ap.add_argument("--model-dir", required=True, help="Path to distilbert_ner_final folder")
-    ap.add_argument("--rules-dir", required=True, help="Path to rules folder containing YAMLs")
+    ap.add_argument("-i", "--input", required=True, help="輸入 BOM Excel 路徑")
+    ap.add_argument("-o", "--output", required=True, help="輸出 Excel 路徑")
+    ap.add_argument("--sheet", default=0, help="工作表索引或名稱（預設 0）")
+    ap.add_argument("--desc-col", default="Description", help="描述欄位名稱")
+    ap.add_argument("--model-dir", required=True, help="distilbert_ner_final 資料夾路徑")
+    ap.add_argument("--rules-dir", required=True, help="包含 YAML 設定檔的 rules 資料夾路徑")
     args = ap.parse_args()
 
     rules_dir = Path(args.rules_dir)
@@ -359,9 +359,9 @@ def main():
 
     df = pd.read_excel(args.input, sheet_name=args.sheet)
     if args.desc_col not in df.columns:
-        raise ValueError(f"Description column '{args.desc_col}' not found. Columns: {list(df.columns)}")
+        raise ValueError(f"找不到描述欄位 '{args.desc_col}'。現有欄位：{list(df.columns)}")
 
-    # Prepare output columns
+    # 準備輸出欄位
     out_rows = []
     for _, row in df.iterrows():
         raw_desc = str(row.get(args.desc_col, "") or "")
@@ -371,19 +371,19 @@ def main():
         merged = _merge_wordpieces(tokens, labels, confs)
         fields, overall_conf = aggregate_fields(merged)
 
-        # normalize + postrules
+        # 正規化 + 後處理規則
         fields = normalize_fields(fields, normalize_cfg, temp_cfg)
         fields = apply_postrules(fields, patterns_cfg)
 
-        # derive outputs
+        # 衍生輸出
         name20 = build_name20(fields, templates_cfg)
         code20 = build_code20(fields, templates_cfg, category_schema)
 
-        # flatten for row output
+        # 展平為資料列輸出
         out = dict(row)
         out["__desc_norm__"] = norm_desc
         out["__overall_conf__"] = overall_conf
-        # Core fields (add as many as you want)
+        # 核心欄位（可依需求新增更多）
         for k in [
             "Category","Type","Resistance","Capacitance","Inductance","Power","Tolerance",
             "Package","Package_Size","Pin_Count","Process_Type_raw","Process_Type",
@@ -397,7 +397,7 @@ def main():
 
     out_df = pd.DataFrame(out_rows)
     out_df.to_excel(args.output, index=False)
-    print(f"Saved: {args.output}")
+    print(f"已儲存：{args.output}")
 
 
 if __name__ == "__main__":
