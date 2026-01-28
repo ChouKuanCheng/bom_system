@@ -320,22 +320,72 @@ def pick_category(row: pd.Series) -> str:
 # -----------------------------------------------------------------------------
 # 通用量測值
 RES_RE = re.compile(r"\b(\d+(?:\.\d+)?)(R|K|M)?(\d+)?\b", re.I)  # 處理 4K7, 10R, 1M
-CAP_RE = re.compile(r"\b(\d+(?:\.\d+)?)(U|N|P)F\b", re.I)
+# V17 修正：容量正規表達式允許數字和單位之間有空格
+CAP_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([UuNnPp])[Ff]\b", re.I)
 CAP_CODE_RE = re.compile(r"\b(\d{3})\b")  # 如 104 代碼（盡力匹配）
+
+# ===== V17 新增：電流 (mA/uA/A) =====
+CURRENT_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([uUmM]?[Aa])\b", re.I)
+
+# ===== V17 新增：電感值 (nH/uH/mH) =====
+IND_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([nNuUmM][Hh])\b", re.I)
+
 # 電壓模式
 #  - 範圍：1.65~3.6V, 1.65-3.6V, 1.65 to 3.6V
 #  - 單一：3.6V, 5VDC
+#  - V17 新增：裸電壓 (275/400/630) 安規電壓
 VOLT_RANGE_RE = re.compile(
-    r"\b(\d+(?:\.\d+)?)\s*(?:~|\-|TO)\s*(\d+(?:\.\d+)?)\s*V(?:DC)?\b",
+    r"\b(\d+(?:\.\d+)?)\s*(?:~|\-|TO)\s*(\d+(?:\.\d+)?)\s*k?V(?:AC|DC)?\b",
     re.I,
 )
-VOLT_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*V(?:DC)?\b", re.I)
-TOL_RE = re.compile(r"\b±?\s?(\d+(?:\.\d+)?)\s?%\b", re.I)
-PWR_RE = re.compile(r"\b(\d+/\d+|\d+(?:\.\d+)?)\s?(W|MW)\b", re.I)
+VOLT_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*k?V(?:AC|DC)?\b", re.I)
+VOLT_BARE_RE = re.compile(r"\b(275|400|630)\b(?![\w%])")  # 安規裸電壓
+
+# V17 修正：容差正規表達式支援 +/- 和全形符號
+TOL_RE = re.compile(r"[±\+\-/]?\s*(\d+(?:\.\d+)?)\s*[%％]", re.I)
+PWR_RE = re.compile(r"\b(\d+/\d+|\d+(?:\.\d+)?)\s?([mM]?[Ww])\b", re.I)
+
+# ===== V17 新增：溫度係數 (PPM) =====
+TEMP_COEF_RE = re.compile(r"[<>≦≤±\+\-/]?\s*(\d+(?:\.\d+)?)\s*PPM\b", re.I)
+
+# ===== V17 新增：波長 (nm) =====
+WAVELENGTH_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*nm\b", re.I)
+
+# ===== V17 新增：針腳數 (8P, 2x8P, 16PIN) =====
+PIN_COUNT_RE = re.compile(r"\b(\d+(?:\s*[xX]\s*\d+)?)\s*[Pp](?:IN)?[Ss]?\b", re.I)
+
+# ===== V17 新增：間距 (P=2.54mm, L=5mm) =====
+PITCH_RE = re.compile(r"\b[PLWHplwh][:=]?\s*(\d+(?:\.\d+)?)\s*mm\b", re.I)
+PITCH_DIM_RE = re.compile(r"\b(\d+(?:\.\d+)?)(?:\s*[xX]\s*(\d+(?:\.\d+)?)){1,2}\s*mm\b", re.I)
+
+# ===== V17 新增：顏色 =====
+COLOR_RE = re.compile(r"\b(RED|GREEN|BLUE|WHITE|YELLOW|AMBER|RGB|BLACK|NATURAL)\b", re.I)
+
+# ===== V17 新增：頻率 (MHz/kHz/GHz) =====
+FREQ_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([kKmMgG]?[Hh][Zz])\b", re.I)
+
+# ===== V17 新增：類型 (介質類型、電晶體極性等) =====
+TYPE_RE = re.compile(
+    r"\b(CERAMIC|CER|TANTALUM|TANT|ELEC|ELECTROLYTIC|FILM|PP|THIN|THICK|"
+    r"NPN|PNP|N-CH|P-CH|N-TYPE|P-TYPE|BI[-\s]?DIRECTIONAL|UNI[-\s]?DIRECTIONAL|"
+    r"SCHOTTKY|ZERO-DRIFT|COMMON|POWER|ARRAY)\b",
+    re.I,
+)
+
+# ===== V17 新增：法規 =====
+COMPLIANCE_RE = re.compile(
+    r"\b(RoHS|HF|Halogen\s*Free|Pb\s*Free|Lead[-\s]*Free|REACH|UL94V0|AEC-Q200|Green|Eco)\b",
+    re.I,
+)
 
 # 封裝 / 尺寸
-PKG_RE = re.compile(r"\b(0402|0603|0805|1206|1210|2010|2512|1608|2012|3216)\b", re.I)
-PKG_WORD_RE = re.compile(r"\b(SOT-?\d+|SOD-?\d+|SOP-?\d+|SOIC-?\d+|QFN-?\d+|DFN-?\d+|TO-?\d+)\b", re.I)
+PKG_RE = re.compile(r"\b(01005|0201|0402|0603|0805|1206|1210|2010|2512|1608|2012|3216|2835)\b", re.I)
+PKG_WORD_RE = re.compile(
+    r"\b(SOT-?\d+[-\w]*|SOD-?\d+[-\w]*|SOP-?\d+|SOIC-?\d+|TSSOP-?\d*|LQFP-?\d*|"
+    r"QFN-?\d+[-\w]*|DFN-?\d+[-\w]*|TO[-_]?\d+[-\w]*|DPAK|D2PAK|DO-?\d+[-\w]*|"
+    r"POWERDI[-\w]*|WSON[-\w]*|TSON[-\w]*|BGA|SMB|SMA|SIP|ZIP|COB)\b",
+    re.I,
+)
 
 
 def canon_pkg(s: str) -> str:
@@ -391,6 +441,7 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
     """
     從正規化基底文字中提取常見量測值。
     回傳提取欄位的字典（字串形式）。
+    V17 修正：新增電流、電感值、溫度係數、波長、針腳數、間距、顏色、頻率、類型、法規等欄位。
     """
     s = base
     out: Dict[str, str] = {}
@@ -403,12 +454,22 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
     if res_tokens:
         out["阻值"] = shortest_res_string(res_tokens) + "O"  # 筆記本使用 'O' 作為歐姆後綴
 
-    # 電容值（如 10UF/100NF/1PF）
+    # 電容值（如 10UF/100NF/1PF，V17 修正：允許空格）
     cap_tokens = []
     for m in CAP_RE.finditer(s):
         cap_tokens.append(f"{m.group(1)}{m.group(2).upper()}F")
     if cap_tokens:
         out["容量"] = shortest_cap_string(cap_tokens)
+
+    # ===== V17 新增：電感值 (nH/uH/mH) =====
+    m = IND_RE.search(s)
+    if m:
+        out["電感值"] = f"{m.group(1)}{m.group(2).upper()}"
+
+    # ===== V17 新增：電流 (mA/uA/A) =====
+    m = CURRENT_RE.search(s)
+    if m:
+        out["電流"] = f"{m.group(1)}{m.group(2).upper()}"
 
     # 電壓
     # 優先使用範圍電壓（如 1.65~3.6V）。
@@ -419,8 +480,13 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
         m = VOLT_RE.search(s)
         if m:
             out["電壓"] = f"{m.group(1)}V"
+        else:
+            # V17 新增：檢查安規裸電壓 (275/400/630)
+            m = VOLT_BARE_RE.search(s)
+            if m:
+                out["電壓"] = f"{m.group(1)}V"
 
-    # 容差
+    # 容差 (V17 修正：支援更多符號格式)
     m = TOL_RE.search(s)
     if m:
         out["容差"] = f"{m.group(1)}%"
@@ -429,6 +495,51 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
     m = PWR_RE.search(s)
     if m:
         out["功率"] = normalize_power_token(m.group(0))
+
+    # ===== V17 新增：溫度係數 (PPM) =====
+    m = TEMP_COEF_RE.search(s)
+    if m:
+        out["溫度係數"] = f"{m.group(1)}PPM"
+
+    # ===== V17 新增：波長 (nm) =====
+    m = WAVELENGTH_RE.search(s)
+    if m:
+        out["波長"] = f"{m.group(1)}nm"
+
+    # ===== V17 新增：針腳數 (8P, 2x8P, 16PIN) =====
+    m = PIN_COUNT_RE.search(s)
+    if m:
+        pin_str = m.group(1).upper().replace(" ", "")
+        out["針腳數"] = pin_str
+
+    # ===== V17 新增：間距 (P=2.54mm, L=5mm) =====
+    m = PITCH_RE.search(s)
+    if m:
+        out["間距"] = f"{m.group(1)}mm"
+    else:
+        m = PITCH_DIM_RE.search(s)
+        if m:
+            out["間距"] = m.group(0).upper()
+
+    # ===== V17 新增：顏色 =====
+    m = COLOR_RE.search(s)
+    if m:
+        out["顏色"] = m.group(1).upper()
+
+    # ===== V17 新增：頻率 (MHz/kHz/GHz) =====
+    m = FREQ_RE.search(s)
+    if m:
+        out["頻率"] = f"{m.group(1)}{m.group(2).upper()}"
+
+    # ===== V17 新增：類型 (介質類型、電晶體極性等) =====
+    m = TYPE_RE.search(s)
+    if m:
+        out["類型"] = m.group(1).upper()
+
+    # ===== V17 新增：法規 =====
+    m = COMPLIANCE_RE.search(s)
+    if m:
+        out["法規"] = m.group(1).upper()
 
     # 封裝 / 尺寸
     m = PKG_RE.search(s)
@@ -448,9 +559,9 @@ def extract_tokens(base: str, cat: str) -> Dict[str, str]:
     """
     out = extract_generic_meas(base)
 
-    # CAP 的簡易介電質提取（盡力處理）
+    # CAP 的簡易介電質提取（V17 擴充溫度代碼列表）
     if cat == "CAP":
-        m = re.search(r"\b(C0G|NP0|X7R|X5R|Y5V)\b", base, re.I)
+        m = re.search(r"\b(C0G|NP0|NPO|X7R|X5R|Y5V|P100|N150|N750|U2J|X6S|Z5U|X7S|X8R|Y5U)\b", base, re.I)
         if m:
             out["介質"] = m.group(1).upper()
 
@@ -490,8 +601,9 @@ def build_normalized_desc(cat: str, t: Dict[str, str]) -> str:
 
     _add(cat)
 
-    # 常用順序（可依需求擴充）
-    for k in ["阻值", "容量", "電壓", "容差", "功率", "介質", "尺寸", "封裝", "方向"]:
+    # 常用順序（V17 擴充：新增電感值、電流、溫度係數、波長、針腳數、間距、顏色、頻率、類型、法規）
+    for k in ["阻值", "容量", "電感值", "電壓", "電流", "容差", "功率", "溫度係數", "介質",
+              "顏色", "頻率", "波長", "間距", "尺寸", "封裝", "針腳數", "方向", "類型", "法規"]:
         _add(t.get(k, ""))
 
     # 其餘欄位可附加於末尾（可選）
@@ -547,7 +659,9 @@ def pipe_view(cat: str, t: Dict[str, str]) -> str:
     除錯友善的檢視字串，顯示已提取的欄位。
     工程師可用此快速調整規則。
     """
-    keys = ["阻值", "容量", "電壓", "容差", "功率", "介質", "尺寸", "封裝", "方向"]
+    # V17 擴充欄位列表
+    keys = ["阻值", "容量", "電感值", "電壓", "電流", "容差", "功率", "溫度係數",
+            "介質", "顏色", "頻率", "波長", "間距", "尺寸", "封裝", "針腳數", "方向", "類型", "法規"]
     parts = [f"{k}={t.get(k,'')}" for k in keys if t.get(k, "")]
     return f"{cat}|" + "|".join(parts)
 
@@ -743,17 +857,27 @@ def run_pipeline(
         disp = display20(cat, norm, tks)
 
         out_row = dict(row)  # 複製所有原始欄位 + 新增的工作欄位
-        # 提取的欄位
+        # 提取的欄位 (V17 擴充)
         out_row.update({
             "阻值": tks.get("阻值",""),
             "容量": tks.get("容量",""),
+            "電感值": tks.get("電感值",""),
             "電壓": tks.get("電壓",""),
+            "電流": tks.get("電流",""),
             "容差": tks.get("容差",""),
             "功率": tks.get("功率",""),
+            "溫度係數": tks.get("溫度係數",""),
             "介質": tks.get("介質",""),
+            "顏色": tks.get("顏色",""),
+            "頻率": tks.get("頻率",""),
+            "波長": tks.get("波長",""),
+            "間距": tks.get("間距",""),
             "尺寸": tks.get("尺寸",""),
             "封裝": tks.get("封裝",""),
+            "針腳數": tks.get("針腳數",""),
             "方向": tks.get("方向",""),
+            "類型": tks.get("類型",""),
+            "法規": tks.get("法規",""),
             "其餘規格": tks.get("其餘規格",""),
             "判別比例": round(coverage_ratio, 4),
             "正規化Description": norm,
@@ -797,17 +921,28 @@ def run_pipeline(
     #   - 所有原始輸入欄位
     #   - 一小組穩定的正規化欄位
     # 且不需要中間除錯欄位。
+    # V17 擴充欄位列表
     normalized_cols = [
         "類別",
         "阻值",
         "容量",
+        "電感值",
         "電壓",
+        "電流",
         "容差",
         "功率",
+        "溫度係數",
         "介質",
+        "顏色",
+        "頻率",
+        "波長",
+        "間距",
         "尺寸",
         "封裝",
+        "針腳數",
         "方向",
+        "類型",
+        "法規",
         "其餘規格",
         "正規化Description",
         "顯示名20",
