@@ -1061,17 +1061,25 @@ def ner_infer_dataframe(df: pd.DataFrame, desc_col: str, cfg: NerInferenceConfig
 
     ner_results = []
     ner_fields_list = []
+    vendor_names = []
     
     print("[資訊] 開始 NER 推論...")
     for idx, row in df.iterrows():
-        pairs, fields_zh, _ = infer_one(row.get(desc_col, ""))
+        pairs, fields_zh, vendor = infer_one(row.get(desc_col, ""))
         ner_results.append(str(pairs))
         ner_fields_list.append(fields_zh)
+        vendor_names.append(vendor)
+        
+        # DEBUG: 印出第一筆有阻值的資料
+        if idx < 3 and "阻值" in fields_zh:
+            print(f"[DEBUG] NER row {idx} 阻值: {fields_zh['阻值']} (RAW: {fields_zh})")
+            
     print(f"[資訊] NER 推論完成，共處理 {len(df)} 筆資料")
 
     df = df.copy()
     df["NER_Result"] = ner_results
     df["NER_Fields"] = ner_fields_list  # 結構化欄位字典
+    df["Vendor_Name_Model"] = vendor_names
     return df
 
 
@@ -1102,13 +1110,16 @@ def decide_status(row: pd.Series) -> Tuple[str, str]:
     except Exception:
         pass
 
+    val_res = str(row.get("阻值", "")).strip()
+    val_cap = str(row.get("容量", "")).strip()
+
     if not norm:
         return "NEED_REVIEW", "normalized_description_empty"
     if cat == "OT":
         return "NEED_REVIEW", "category_OT"
-    if cat == "RES" and "阻值" not in norm:
+    if cat == "RES" and not val_res:
         return "NEED_REVIEW", "missing_resistance"
-    if cat == "CAP" and "容量" not in norm:
+    if cat == "CAP" and not val_cap:
         return "NEED_REVIEW", "missing_capacitance"
 
     return "AUTO", ""
@@ -1326,7 +1337,7 @@ def run_pipeline(
         "status",
         "review_reason",
     ]
-    model_cols = [c for c in ["NER_Result", "Vendor_Name_Model"] if c in out_main.columns]
+    model_cols = [c for c in ["NER_Result"] if c in out_main.columns]
     keep_cols = [c for c in (original_cols + normalized_cols + model_cols) if c in out_main.columns]
 
     if not debug:
