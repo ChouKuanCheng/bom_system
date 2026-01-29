@@ -276,7 +276,10 @@ def normalize_base_text(desc: str) -> str:
     s = re.sub(r"\bOHMS?\b", "O", s, flags=re.I)
 
     # 分隔符處理
-    s = s.replace(",", " ").replace("|", " ").replace("/", " ")
+    # 注意：保留功率格式中的 / 符號（如 1/16W），只替換其他用途的 /
+    s = s.replace(",", " ").replace("|", " ")
+    # 使用正規表達式只替換非功率格式的 / (不是 數字/數字W 的情況)
+    s = re.sub(r"/(?!\d+[mM]?[Ww])", " ", s)
 
     # 移除雜訊詞彙 (不區分大小寫)
     for w in DROP_WORDS:
@@ -408,7 +411,7 @@ COMPLIANCE_RE = re.compile(
 )
 
 # 封裝 / 尺寸
-PKG_RE = re.compile(r"\b(01005|0201|0402|0603|0805|1206|1210|2010|2512|1608|2012|3216|2835)\b", re.I)
+PKG_RE = re.compile(r"\b(01005|0201|0402|0603|0612|0805|1206|1210|2010|2512|1608|2012|3216|2835)\b", re.I)
 PKG_WORD_RE = re.compile(
     r"\b(SOT-?\d+[-\w]*|SOD-?\d+[-\w]*|SOP-?\d+|SOIC-?\d+|TSSOP-?\d*|LQFP-?\d*|MSOP-?\d*|"
     r"QFN-?\d+[-\w]*|DFN-?\d+[-\w]*|TO[-_]?\d+[-\w]*|DPAK|D2PAK|DO-?\d+[-\w]*|"
@@ -562,24 +565,29 @@ def capacitance_to_eia(value: str) -> str:
     """
     將電容值轉換為 EIA 代碼表示法。
     
-    EIA 代碼是 3 位數字，前兩位是有效數字，第三位是 10 的次方（單位為 pF）：
-    - 10pF -> 100 (10 × 10^0 = 10pF)
-    - 100pF -> 101 (10 × 10^1 = 100pF)
-    - 1nF -> 102 (10 × 10^2 = 1000pF = 1nF)
-    - 10nF -> 103 (10 × 10^3 = 10000pF = 10nF)
-    - 100nF -> 104 (10 × 10^4 = 100000pF = 100nF)
-    - 1uF -> 105 (10 × 10^5 = 1000000pF = 1uF)
-    - 10uF -> 106
-    - 100uF -> 107
-    - 0.1uF -> 104 (100nF = 0.1uF)
+    EIA 代碼是 3 位數字：
+    - 前兩位是有效數字
+    - 第三位是乘數（要乘以 10 的次方數，即補幾個 0）
+    
+    範例（單位為 pF）：
+    - 10pF = 10 × 10^0 → 100
+    - 100pF = 10 × 10^1 → 101
+    - 470pF = 47 × 10^1 → 471
+    - 1nF = 1000pF = 10 × 10^2 → 102
+    - 10nF = 10000pF = 10 × 10^3 → 103
+    - 100nF = 100000pF = 10 × 10^4 → 104
+    - 470nF = 470000pF = 47 × 10^4 → 474
+    - 1uF = 1000000pF = 10 × 10^5 → 105
+    - 2.2uF = 2200000pF = 22 × 10^5 → 225
+    - 10uF = 10000000pF = 10 × 10^6 → 106
     """
     if not value:
         return ""
     
-    v = value.strip().upper()
+    v = value.strip()
     
-    # 解析電容值和單位
-    m = re.fullmatch(r'(\d+(?:\.\d+)?)\s*([PNU])?F?', v, re.I)
+    # 解析電容值和單位（保留原始大小寫用於匹配）
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)\s*([PpNnUu])?[Ff]?', v)
     if not m:
         return value  # 無法解析，返回原值
     
@@ -595,35 +603,39 @@ def capacitance_to_eia(value: str) -> str:
         pf = num
     
     # 計算 EIA 代碼
-    if pf < 1:
-        return value  # 太小，無法表示
+    # 小於 10pF 的值，EIA 三碼通常不適用，直接返回原值
+    if pf < 10:
+        return value
     
-    # 找到有效數字和次方
-    import math
-    exponent = int(math.floor(math.log10(pf)))
-    mantissa = pf / (10 ** exponent)
+    # 將 pF 值轉換為整數（四捨五入到最近的整數）
+    pf_int = int(round(pf))
     
-    # 取前兩位有效數字
-    if mantissa >= 10:
-        mantissa /= 10
-        exponent += 1
+    # 將數值表示為 "AB × 10^C" 形式
+    # AB 是兩位有效數字，C 是乘數
+    pf_str = str(pf_int)
     
-    # 轉換為兩位數
-    two_digits = int(round(mantissa * 10))
-    if two_digits >= 100:
-        two_digits = int(two_digits / 10)
-        exponent += 1
+    if len(pf_str) <= 2:
+        # 10pF 或更小，乘數為 0
+        two_digits = pf_str.zfill(2)  # 補零到兩位
+        multiplier = 0
+    else:
+        # 取前兩位有效數字，其餘位數就是乘數
+        two_digits = pf_str[:2]
+        multiplier = len(pf_str) - 2
     
-    # 組合 EIA 代碼
-    eia_code = f"{two_digits:02d}{exponent}"
+    eia_code = f"{two_digits}{multiplier}"
     return eia_code
 
 
-def extract_generic_meas(base: str) -> Dict[str, str]:
+def extract_generic_meas(base: str, raw_desc: str = "") -> Dict[str, str]:
     """
     從正規化基底文字中提取常見量測值。
     回傳提取欄位的字典（字串形式）。
     V17 修正：新增電流、電感值、溫度係數、波長、針腳數、間距、顏色、頻率、類型、法規等欄位。
+    
+    Args:
+        base: 已正規化的基底文字（不含括號內容）
+        raw_desc: 原始描述（包含括號內容），用於提取括號內的容量值
     """
     s = base
     out: Dict[str, str] = {}
@@ -646,9 +658,19 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
         out["阻值_IEC"] = resistance_to_iec(out["阻值"])
 
     # 電容值（如 10UF/100NF/1PF，V17 修正：允許空格）
+    # 從正規化基底文字提取
     cap_tokens = []
     for m in CAP_RE.finditer(s):
         cap_tokens.append(f"{m.group(1)}{m.group(2)}F")
+    
+    # 也從原始描述（包含括號內容）中提取，這樣 "10000nF(10uF)" 中的 "10uF" 也會被提取
+    if raw_desc:
+        raw_normalized = normalize_ascii(raw_desc)
+        for m in CAP_RE.finditer(raw_normalized):
+            cap_token = f"{m.group(1)}{m.group(2)}F"
+            if cap_token not in cap_tokens:
+                cap_tokens.append(cap_token)
+    
     if cap_tokens:
         out["容量"] = shortest_cap_string(cap_tokens)
         # 新增 EIA 轉換欄位
@@ -745,12 +767,17 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
     return out
 
 
-def extract_tokens(base: str, cat: str) -> Dict[str, str]:
+def extract_tokens(base: str, cat: str, raw_desc: str = "") -> Dict[str, str]:
     """
     類別感知的提取包裝器。
     擴充此函式以針對各類別新增更多規則。
+    
+    Args:
+        base: 已正規化的基底文字
+        cat: 類別
+        raw_desc: 原始描述（用於提取括號內的值）
     """
-    out = extract_generic_meas(base)
+    out = extract_generic_meas(base, raw_desc)
 
     # CAP 的簡易介電質提取（V17 擴充溫度代碼列表）
     if cat == "CAP":
@@ -794,10 +821,10 @@ def build_normalized_desc(cat: str, t: Dict[str, str]) -> str:
 
     _add(cat)
 
-    # 常用順序（V17 擴充：新增電感值、電流、溫度係數、波長、針腳數、間距、顏色、頻率、類型、法規）
+    # 常用順序（不包含法規）
     # 注意：IEC/EIA 轉換欄位不放入正規化描述
     for k in ["阻值", "容量", "電感值", "電壓", "電流", "容差", "功率", "溫度係數", "介質",
-              "顏色", "頻率", "波長", "間距", "尺寸", "封裝", "針腳數", "方向", "類型", "法規"]:
+              "顏色", "頻率", "波長", "間距", "尺寸", "封裝", "針腳數", "方向", "類型"]:
         _add(t.get(k, ""))
 
     # 其餘欄位可附加於末尾（可選）
@@ -809,14 +836,35 @@ def display20(cat: str, norm: str, others: Optional[Dict[str, str]] = None, min_
     建立簡潔的顯示名稱（<=20 字元）供 UI 欄位或快速瀏覽使用。
     策略：
       - 以類別作為前綴（RES/CAP/IND/IC/CN/OT）
-      - 移除尾部標記的空格
-      - 若太短，則使用其他可用欄位補充
+      - 阻值使用 IEC 格式，容量使用 EIA 格式
+      - 不包含法規欄位
     """
     prefix = PREFIX.get(cat, "OT")
-    tail = norm.split(" ", 1)[1] if " " in norm else ""
-    tokens = tail.split()
-
-    # 去重尾部標記同時保持順序（防止 IC3.6V3.6V 這類輸出）。
+    
+    # 優先使用 IEC/EIA 格式的值
+    tokens: List[str] = []
+    if others:
+        # 阻值優先使用 IEC 格式
+        res_val = others.get("阻值_IEC", "") or others.get("阻值", "")
+        if res_val:
+            tokens.append(res_val)
+        
+        # 容量優先使用 EIA 格式
+        cap_val = others.get("容量_EIA", "") or others.get("容量", "")
+        if cap_val:
+            tokens.append(cap_val)
+        
+        # 其他欄位（不包含法規）
+        for k in ["電感值", "電壓", "電流", "容差", "功率", "介質", "尺寸", "封裝"]:
+            v = others.get(k, "")
+            if v:
+                tokens.append(v)
+    else:
+        # 如果沒有 others，從 norm 中提取
+        tail = norm.split(" ", 1)[1] if " " in norm else ""
+        tokens = tail.split()
+    
+    # 去重同時保持順序
     dedup_tokens: List[str] = []
     seen_tok: set[str] = set()
     for tok in tokens:
@@ -826,25 +874,6 @@ def display20(cat: str, norm: str, others: Optional[Dict[str, str]] = None, min_
         seen_tok.add(tok)
 
     base = prefix + "".join(dedup_tokens)
-
-    if len(base) >= min_len:
-        return base[:max_len]
-
-    # 補充填充
-    if others:
-        # 僅使用 base 中尚未存在的值進行補充。
-        extra_parts: List[str] = []
-        for v in others.values():
-            v = str(v).strip()
-            if not v:
-                continue
-            if v in base:
-                continue
-            extra_parts.append(v)
-        extra = "".join(extra_parts)
-        base2 = (base + extra)[:max_len]
-        return base2
-
     return base[:max_len]
 
 
@@ -1037,7 +1066,8 @@ def run_pipeline(
     for _, row in df.iterrows():
         base = str(row.get("_BASE_", ""))
         cat = str(row.get("類別", "OT"))
-        tks = extract_tokens(base, cat)
+        raw_desc = str(row.get("description_raw", ""))
+        tks = extract_tokens(base, cat, raw_desc)
 
         # 覆蓋率：基底描述中有多少被提取欄位所解釋。
         # 用於將模糊資料列路由至人工審核（預設閾值 15%）。
