@@ -471,46 +471,91 @@ def resistance_to_iec(value: str) -> str:
     將電阻值轉換為 IEC 60063 表示法。
     
     IEC 表示法用 R、K、M 等字母代替小數點，例如：
-    - 4.7K -> 4K7
-    - 10R -> 10R
-    - 1.5M -> 1M5
-    - 0.1R -> R10 或 0R1
-    - 47KO -> 47K (移除 O 後綴)
-    - 71.9mO -> 71m9 (毫歐姆)
+    - 1Ω -> 1R0
+    - 4.7Ω -> 4R7
+    - 10Ω -> 10R
+    - 100Ω -> 100R
+    - 1KΩ -> 1K0
+    - 4.7KΩ -> 4K7
+    - 10KΩ -> 10K
+    - 1MΩ -> 1M0
+    - 10mΩ -> R01 (10mΩ = 0.01Ω)
+    
+    注意大小寫區分：
+    - M (大寫) = 兆歐姆 (MΩ) = 10^6
+    - m (小寫) = 毫歐姆 (mΩ) = 10^-3
     """
     if not value:
         return ""
     
     # 移除 O/Ω 後綴（如果有的話）
-    v = re.sub(r'[OΩ]$', '', value.strip(), flags=re.I)
+    v = re.sub(r'[OΩ]$', '', value.strip())
     
     # 嘗試匹配數值+單位的格式 (例如 4.7K, 10R, 71.9m)
-    m = re.fullmatch(r'(\d+(?:\.\d+)?)([RKMmµu])?', v, re.I)
+    # 注意：這裡不使用 re.I 以保留大小寫區分
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)([RKMmµu])?', v)
     if not m:
         return value  # 無法解析，返回原值
     
-    num_str = m.group(1)
+    num = float(m.group(1))
     unit = m.group(2) or 'R'  # 預設單位為 R（歐姆）
-    unit = unit.upper() if unit.upper() in ['R', 'K', 'M'] else unit.lower()
     
-    # 如果是整數（沒有小數點），直接返回
-    if '.' not in num_str:
-        return f"{num_str}{unit}"
+    # 先將所有數值轉換為歐姆（注意大小寫區分！）
+    if unit == 'm':  # 毫歐姆（小寫 m）
+        ohms = num / 1000
+    elif unit in ['µ', 'u']:  # 微歐姆
+        ohms = num / 1_000_000
+    elif unit == 'K' or unit == 'k':  # 千歐姆
+        ohms = num * 1000
+    elif unit == 'M':  # 兆歐姆（大寫 M）
+        ohms = num * 1_000_000
+    else:  # 歐姆 (R)
+        ohms = num
     
-    # 有小數點的情況，將小數點替換為單位字母
-    parts = num_str.split('.')
-    integer_part = parts[0]
-    decimal_part = parts[1].rstrip('0')  # 移除尾部的 0
+    # 根據數值大小選擇適當的 IEC 單位
+    if ohms >= 1_000_000:  # MΩ 範圍
+        val = ohms / 1_000_000
+        iec_unit = 'M'
+    elif ohms >= 1000:  # KΩ 範圍
+        val = ohms / 1000
+        iec_unit = 'K'
+    else:  # Ω 範圍 (包含小於 1Ω 的情況)
+        val = ohms
+        iec_unit = 'R'
     
-    if integer_part == '0':
-        # 例如 0.1R -> R10
-        return f"{unit}{decimal_part}"
-    elif decimal_part:
-        # 例如 4.7K -> 4K7
-        return f"{integer_part}{unit}{decimal_part}"
+    # 格式化為 IEC 表示法
+    # 處理浮點數精度問題
+    val = round(val, 6)
+    
+    if val < 1:
+        # 小於 1 的情況，例如 0.01 -> R01
+        # 格式化為小數，移除前導 "0."
+        decimal_str = f"{val:.6f}".lstrip('0').lstrip('.')
+        decimal_str = decimal_str.rstrip('0') or '0'
+        return f"{iec_unit}{decimal_str}"
+    elif val == int(val):
+        # 整數，依據規則：
+        # 1 -> 1R0, 1K0, 1M0（個位數加 0）
+        # 10 -> 10R, 10K（兩位數以上不加）
+        int_val = int(val)
+        if int_val < 10:
+            return f"{int_val}{iec_unit}0"
+        else:
+            return f"{int_val}{iec_unit}"
     else:
-        # 小數部分為空（例如 10.0K -> 10K）
-        return f"{integer_part}{unit}"
+        # 有小數，用單位字母替代小數點
+        val_str = f"{val:.4f}".rstrip('0').rstrip('.')
+        if '.' in val_str:
+            parts = val_str.split('.')
+            integer_part = parts[0]
+            decimal_part = parts[1]
+            return f"{integer_part}{iec_unit}{decimal_part}"
+        else:
+            int_val = int(float(val_str))
+            if int_val < 10:
+                return f"{int_val}{iec_unit}0"
+            else:
+                return f"{int_val}{iec_unit}"
 
 
 def capacitance_to_eia(value: str) -> str:
@@ -749,8 +794,9 @@ def build_normalized_desc(cat: str, t: Dict[str, str]) -> str:
 
     _add(cat)
 
-    # 常用順序（V17 擴充：新增電感值、電流、溫度係數、波長、針腳數、間距、顏色、頻率、類型、法規，新增 DCR）
-    for k in ["阻值", "容量", "電感值", "DCR", "電壓", "電流", "容差", "功率", "溫度係數", "介質",
+    # 常用順序（V17 擴充：新增電感值、電流、溫度係數、波長、針腳數、間距、顏色、頻率、類型、法規）
+    # 注意：IEC/EIA 轉換欄位不放入正規化描述
+    for k in ["阻值", "容量", "電感值", "電壓", "電流", "容差", "功率", "溫度係數", "介質",
               "顏色", "頻率", "波長", "間距", "尺寸", "封裝", "針腳數", "方向", "類型", "法規"]:
         _add(t.get(k, ""))
 
