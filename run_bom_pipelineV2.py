@@ -225,6 +225,31 @@ def upper_ascii(s: str) -> str:
     return t.upper().strip()
 
 
+def normalize_ascii(s: str) -> str:
+    """
+    正規化常見 BOM 符號但保留原始大小寫。
+
+    範例：
+    - µ -> u
+    - Ω -> O
+    - ％ -> %
+    - 1uF -> 1uF (保持原始大小寫)
+    """
+    t = nfkc(s)
+    t = (
+        t.replace("µ", "u")
+         .replace("Ω", "O")
+         .replace("％", "%")
+         .replace("＋", "+")
+         .replace("－", "-")
+    )
+    t = t.replace("+/-", "±")
+    t = t.replace("≦", "≤").replace("<=", "≤").replace("＜=", "≤")
+    t = t.replace("℃", "°C")
+    t = re.sub(r"\s+", " ", t)
+    return t.strip()  # 不轉換大小寫
+
+
 # 基底正規化時要移除的詞彙（移植清單；可依需求調整）
 DROP_WORDS = [
     "PLEASE", "W/", "WITH", "WITHOUT", "SMD", "SMT", "TH", "T/H",
@@ -241,21 +266,21 @@ def normalize_base_text(desc: str) -> str:
     - 移除雜訊詞彙
     - 合併多餘空白
     """
-    s = upper_ascii(desc)
+    s = normalize_ascii(desc)  # 保留原始大小寫
 
     # 移除 (...) 內容，保留括號外文字
     s = re.sub(r"\([^)]*\)", " ", s)
     s = re.sub(r"（[^）]*）", " ", s)
 
-    # OHM/OHMS -> O
-    s = re.sub(r"\bOHMS?\b", "O", s)
+    # OHM/OHMS -> O (不區分大小寫)
+    s = re.sub(r"\bOHMS?\b", "O", s, flags=re.I)
 
     # 分隔符處理
     s = s.replace(",", " ").replace("|", " ").replace("/", " ")
 
-    # 移除雜訊詞彙
+    # 移除雜訊詞彙 (不區分大小寫)
     for w in DROP_WORDS:
-        s = re.sub(rf"\b{re.escape(w)}\b", " ", s)
+        s = re.sub(rf"\b{re.escape(w)}\b", " ", s, flags=re.I)
 
     s = re.sub(r"\s+", " ", s).strip()
     return s
@@ -330,6 +355,10 @@ CURRENT_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([uUmM]?[Aa])\b", re.I)
 # ===== V17 新增：電感值 (nH/uH/mH) =====
 IND_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([nNuUmM][Hh])\b", re.I)
 
+# ===== 新增：直流電阻 DCR (mΩ/uΩ) =====
+# 處理 71.9mΩ, 100uΩ 這類電感的直流電阻規格
+DCR_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([mMuU]?[ΩO])\b", re.I)
+
 # 電壓模式
 #  - 範圍：1.65~3.6V, 1.65-3.6V, 1.65 to 3.6V
 #  - 單一：3.6V, 5VDC
@@ -381,7 +410,7 @@ COMPLIANCE_RE = re.compile(
 # 封裝 / 尺寸
 PKG_RE = re.compile(r"\b(01005|0201|0402|0603|0805|1206|1210|2010|2512|1608|2012|3216|2835)\b", re.I)
 PKG_WORD_RE = re.compile(
-    r"\b(SOT-?\d+[-\w]*|SOD-?\d+[-\w]*|SOP-?\d+|SOIC-?\d+|TSSOP-?\d*|LQFP-?\d*|"
+    r"\b(SOT-?\d+[-\w]*|SOD-?\d+[-\w]*|SOP-?\d+|SOIC-?\d+|TSSOP-?\d*|LQFP-?\d*|MSOP-?\d*|"
     r"QFN-?\d+[-\w]*|DFN-?\d+[-\w]*|TO[-_]?\d+[-\w]*|DPAK|D2PAK|DO-?\d+[-\w]*|"
     r"POWERDI[-\w]*|WSON[-\w]*|TSON[-\w]*|BGA|SMB|SMA|SIP|ZIP|COB)\b",
     re.I,
@@ -437,6 +466,114 @@ def shortest_cap_string(cands: List[str]) -> str:
     return min(cands, key=len)
 
 
+def resistance_to_iec(value: str) -> str:
+    """
+    將電阻值轉換為 IEC 60063 表示法。
+    
+    IEC 表示法用 R、K、M 等字母代替小數點，例如：
+    - 4.7K -> 4K7
+    - 10R -> 10R
+    - 1.5M -> 1M5
+    - 0.1R -> R10 或 0R1
+    - 47KO -> 47K (移除 O 後綴)
+    - 71.9mO -> 71m9 (毫歐姆)
+    """
+    if not value:
+        return ""
+    
+    # 移除 O/Ω 後綴（如果有的話）
+    v = re.sub(r'[OΩ]$', '', value.strip(), flags=re.I)
+    
+    # 嘗試匹配數值+單位的格式 (例如 4.7K, 10R, 71.9m)
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)([RKMmµu])?', v, re.I)
+    if not m:
+        return value  # 無法解析，返回原值
+    
+    num_str = m.group(1)
+    unit = m.group(2) or 'R'  # 預設單位為 R（歐姆）
+    unit = unit.upper() if unit.upper() in ['R', 'K', 'M'] else unit.lower()
+    
+    # 如果是整數（沒有小數點），直接返回
+    if '.' not in num_str:
+        return f"{num_str}{unit}"
+    
+    # 有小數點的情況，將小數點替換為單位字母
+    parts = num_str.split('.')
+    integer_part = parts[0]
+    decimal_part = parts[1].rstrip('0')  # 移除尾部的 0
+    
+    if integer_part == '0':
+        # 例如 0.1R -> R10
+        return f"{unit}{decimal_part}"
+    elif decimal_part:
+        # 例如 4.7K -> 4K7
+        return f"{integer_part}{unit}{decimal_part}"
+    else:
+        # 小數部分為空（例如 10.0K -> 10K）
+        return f"{integer_part}{unit}"
+
+
+def capacitance_to_eia(value: str) -> str:
+    """
+    將電容值轉換為 EIA 代碼表示法。
+    
+    EIA 代碼是 3 位數字，前兩位是有效數字，第三位是 10 的次方（單位為 pF）：
+    - 10pF -> 100 (10 × 10^0 = 10pF)
+    - 100pF -> 101 (10 × 10^1 = 100pF)
+    - 1nF -> 102 (10 × 10^2 = 1000pF = 1nF)
+    - 10nF -> 103 (10 × 10^3 = 10000pF = 10nF)
+    - 100nF -> 104 (10 × 10^4 = 100000pF = 100nF)
+    - 1uF -> 105 (10 × 10^5 = 1000000pF = 1uF)
+    - 10uF -> 106
+    - 100uF -> 107
+    - 0.1uF -> 104 (100nF = 0.1uF)
+    """
+    if not value:
+        return ""
+    
+    v = value.strip().upper()
+    
+    # 解析電容值和單位
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)\s*([PNU])?F?', v, re.I)
+    if not m:
+        return value  # 無法解析，返回原值
+    
+    num = float(m.group(1))
+    unit = (m.group(2) or 'P').upper()  # 預設 pF
+    
+    # 轉換為 pF
+    if unit == 'U':  # uF
+        pf = num * 1_000_000
+    elif unit == 'N':  # nF
+        pf = num * 1_000
+    else:  # pF
+        pf = num
+    
+    # 計算 EIA 代碼
+    if pf < 1:
+        return value  # 太小，無法表示
+    
+    # 找到有效數字和次方
+    import math
+    exponent = int(math.floor(math.log10(pf)))
+    mantissa = pf / (10 ** exponent)
+    
+    # 取前兩位有效數字
+    if mantissa >= 10:
+        mantissa /= 10
+        exponent += 1
+    
+    # 轉換為兩位數
+    two_digits = int(round(mantissa * 10))
+    if two_digits >= 100:
+        two_digits = int(two_digits / 10)
+        exponent += 1
+    
+    # 組合 EIA 代碼
+    eia_code = f"{two_digits:02d}{exponent}"
+    return eia_code
+
+
 def extract_generic_meas(base: str) -> Dict[str, str]:
     """
     從正規化基底文字中提取常見量測值。
@@ -451,8 +588,17 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
     for tok in s.split():
         if re.fullmatch(r"\d+(?:\.\d+)?[RKM]\d*", tok, re.I):
             res_tokens.append(_format_resistance(tok))
+    
+    # 同時檢查 DCR (mΩ/uΩ)，合併到阻值欄位
+    dcr_match = DCR_RE.search(s)
+    if dcr_match:
+        dcr_value = f"{dcr_match.group(1)}{dcr_match.group(2)}"
+        res_tokens.append(dcr_value)
+    
     if res_tokens:
-        out["阻值"] = shortest_res_string(res_tokens) + "O"  # 筆記本使用 'O' 作為歐姆後綴
+        out["阻值"] = shortest_res_string(res_tokens)
+        # 新增 IEC 轉換欄位
+        out["阻值_IEC"] = resistance_to_iec(out["阻值"])
 
     # 電容值（如 10UF/100NF/1PF，V17 修正：允許空格）
     cap_tokens = []
@@ -460,6 +606,8 @@ def extract_generic_meas(base: str) -> Dict[str, str]:
         cap_tokens.append(f"{m.group(1)}{m.group(2)}F")
     if cap_tokens:
         out["容量"] = shortest_cap_string(cap_tokens)
+        # 新增 EIA 轉換欄位
+        out["容量_EIA"] = capacitance_to_eia(out["容量"])
 
     # ===== V17 新增：電感值 (nH/uH/mH) =====
     m = IND_RE.search(s)
@@ -601,8 +749,8 @@ def build_normalized_desc(cat: str, t: Dict[str, str]) -> str:
 
     _add(cat)
 
-    # 常用順序（V17 擴充：新增電感值、電流、溫度係數、波長、針腳數、間距、顏色、頻率、類型、法規）
-    for k in ["阻值", "容量", "電感值", "電壓", "電流", "容差", "功率", "溫度係數", "介質",
+    # 常用順序（V17 擴充：新增電感值、電流、溫度係數、波長、針腳數、間距、顏色、頻率、類型、法規，新增 DCR）
+    for k in ["阻值", "容量", "電感值", "DCR", "電壓", "電流", "容差", "功率", "溫度係數", "介質",
               "顏色", "頻率", "波長", "間距", "尺寸", "封裝", "針腳數", "方向", "類型", "法規"]:
         _add(t.get(k, ""))
 
@@ -659,8 +807,8 @@ def pipe_view(cat: str, t: Dict[str, str]) -> str:
     除錯友善的檢視字串，顯示已提取的欄位。
     工程師可用此快速調整規則。
     """
-    # V17 擴充欄位列表
-    keys = ["阻值", "容量", "電感值", "電壓", "電流", "容差", "功率", "溫度係數",
+    # V17 擴充欄位列表（新增 DCR）
+    keys = ["阻值", "容量", "電感值", "DCR", "電壓", "電流", "容差", "功率", "溫度係數",
             "介質", "顏色", "頻率", "波長", "間距", "尺寸", "封裝", "針腳數", "方向", "類型", "法規"]
     parts = [f"{k}={t.get(k,'')}" for k in keys if t.get(k, "")]
     return f"{cat}|" + "|".join(parts)
@@ -860,7 +1008,9 @@ def run_pipeline(
         # 提取的欄位 (V17 擴充)
         out_row.update({
             "阻值": tks.get("阻值",""),
+            "阻值_IEC": tks.get("阻值_IEC",""),
             "容量": tks.get("容量",""),
+            "容量_EIA": tks.get("容量_EIA",""),
             "電感值": tks.get("電感值",""),
             "電壓": tks.get("電壓",""),
             "電流": tks.get("電流",""),
@@ -925,7 +1075,9 @@ def run_pipeline(
     normalized_cols = [
         "類別",
         "阻值",
+        "阻值_IEC",
         "容量",
+        "容量_EIA",
         "電感值",
         "電壓",
         "電流",
