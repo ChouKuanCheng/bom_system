@@ -890,8 +890,36 @@ def pipe_view(cat: str, t: Dict[str, str]) -> str:
 
 
 # -----------------------------------------------------------------------------
-# 5) 可選的 NER 推論（移植自 apply_model_to_bom.py 核心概念）
+# 5) NER 推論整合（移植自 apply_model_to_bom.py 核心概念）
 # -----------------------------------------------------------------------------
+
+# NER 標籤到中文欄位的映射
+NER_LABEL_TO_FIELD = {
+    "Category": "類別",
+    "Resistance": "阻值",
+    "Capacitance": "容量",
+    "Inductance": "電感值",
+    "Voltage": "電壓",
+    "Current": "電流",
+    "Tolerance": "容差",
+    "Power": "功率",
+    "Temp_Coefficient": "溫度係數",
+    "Temp_Code": "介質",  # 溫度代碼通常對應介質類型
+    "Color": "顏色",
+    "Frequency": "頻率",
+    "Wavelength": "波長",
+    "Size": "尺寸",
+    "Package": "封裝",
+    "Pin_Count": "針腳數",
+    "Type": "類型",
+    "Process_Type": "製程",
+    "Compliance": "法規",
+    # "IGNORE" 和 "O" 不需要映射
+}
+
+# 預設 NER 模型路徑（相對於腳本位置）
+DEFAULT_NER_MODEL_DIR = "distilbert_ner_final"
+
 @dataclass
 class NerInferenceConfig:
     model_dir: Path
@@ -920,6 +948,7 @@ def ner_infer_dataframe(df: pd.DataFrame, desc_col: str, cfg: NerInferenceConfig
 
     輸出欄位：
       - NER_Result：字串化的 (token, label) 列表
+      - NER_Fields：結構化的中文欄位字典（用於填入 Excel）
       - Vendor_Name_Model：提取欄位的簡單串接（盡力處理）
 
     備註：此處保持推論為可選；若 transformers/torch 不可用，會明確失敗。
@@ -961,29 +990,88 @@ def ner_infer_dataframe(df: pd.DataFrame, desc_col: str, cfg: NerInferenceConfig
             if wid < len(tokens):
                 pairs.append((tokens[wid], id2label.get(pred_ids[i], "O")))
 
-        # 聚合為欄位（輕量處理；如需要可重用您的 tokens_to_fields）
-        fields: Dict[str, List[str]] = {}
+        # 聚合為欄位（英文標籤）
+        fields_en: Dict[str, List[str]] = {}
         for tok, lab in pairs:
             if lab == "O" or lab == "IGNORE":
                 continue
-            fields.setdefault(lab, []).append(tok)
-        fields_str = {k: " ".join(v) for k, v in fields.items()}
+            fields_en.setdefault(lab, []).append(tok)
+        
+        # 智能處理重複值：針對阻值/容量等可能有多個等效表示的欄位
+        # 例如 ['10m', 'Ω', '0.01', 'Ω'] 應該只保留一個值
+        def extract_first_value(tokens: List[str], field_type: str) -> str:
+            """從 tokens 中提取第一個完整的值"""
+            combined = "".join(tokens)
+            
+            # 針對阻值：尋找 數字+單位 的模式
+            if field_type == "Resistance":
+                # 匹配阻值模式：數字 + 可選單位字母 + 可選Ω
+                m = re.search(r'(\d+(?:\.\d+)?[munMk]?[ΩOR]?)', combined)
+                if m:
+                    return m.group(1)
+            
+            # 針對容量：尋找 數字+單位 的模式
+            elif field_type == "Capacitance":
+                # 匹配容量模式：數字 + 單位(pF/nF/uF)
+                m = re.search(r'(\d+(?:\.\d+)?[pnuPNU]?[Ff]?)', combined)
+                if m:
+                    return m.group(1)
+            
+            # 其他欄位：返回第一個 token 或全部連接
+            if len(tokens) > 0:
+                # 嘗試找到第一個完整的值（數字+單位）
+                current = ""
+                for tok in tokens:
+                    current += tok
+                    # 如果遇到單位符號，認為一個值結束
+                    if re.search(r'[ΩFHAVWHz%]$', tok) or re.search(r'[pnuμmkMG]?[ΩFHAVWHz]$', current):
+                        return current
+                return current
+            return combined
+        
+        # 需要特殊處理的欄位
+        special_fields = {"Resistance", "Capacitance", "Inductance"}
+        numeric_fields = {"Resistance", "Capacitance", "Inductance", "Voltage", "Current", 
+                          "Tolerance", "Power", "Size", "Package", "Frequency", "Wavelength",
+                          "Pin_Count", "Temp_Coefficient"}
+        
+        fields_str_en = {}
+        for k, v in fields_en.items():
+            if k in special_fields:
+                # 特殊處理：只取第一個完整值
+                fields_str_en[k] = extract_first_value(v, k)
+            elif k in numeric_fields:
+                # 數值類欄位：不加空格
+                fields_str_en[k] = "".join(v)
+            else:
+                # 其他欄位：保留空格
+                fields_str_en[k] = " ".join(v)
+        
+        # 轉換為中文欄位
+        fields_zh: Dict[str, str] = {}
+        for en_label, value in fields_str_en.items():
+            zh_field = NER_LABEL_TO_FIELD.get(en_label)
+            if zh_field:
+                fields_zh[zh_field] = value
 
-        # 簡易供應商名稱：若存在則依穩定順序串接
+        # 簡易供應商名稱
         order = ["Category", "Type", "Resistance", "Capacitance", "Voltage", "Tolerance", "Power", "Package", "Size", "Pin_Count"]
-        vendor = "".join([fields_str.get(k, "") for k in order]).replace(" ", "")
-        return pairs, fields_str, vendor
+        vendor = "".join([fields_str_en.get(k, "") for k in order]).replace(" ", "")
+        return pairs, fields_zh, vendor
 
     ner_results = []
-    vendor_names = []
-    for _, row in df.iterrows():
-        pairs, _, vendor = infer_one(row.get(desc_col, ""))
+    ner_fields_list = []
+    
+    print("[資訊] 開始 NER 推論...")
+    for idx, row in df.iterrows():
+        pairs, fields_zh, _ = infer_one(row.get(desc_col, ""))
         ner_results.append(str(pairs))
-        vendor_names.append(vendor)
+        ner_fields_list.append(fields_zh)
+    print(f"[資訊] NER 推論完成，共處理 {len(df)} 筆資料")
 
     df = df.copy()
     df["NER_Result"] = ner_results
-    df["Vendor_Name_Model"] = vendor_names
+    df["NER_Fields"] = ner_fields_list  # 結構化欄位字典
     return df
 
 
@@ -1058,68 +1146,126 @@ def run_pipeline(
     if debug:
         df["原始Description"] = df["description_raw"]
 
-    # 3) 規則式正規化
+    # 3) NER 模型推論（預設啟用，若模型存在）
+    ner_enabled = False
+    if model_dir is None:
+        # 嘗試使用預設模型路徑
+        default_model_path = Path(__file__).parent / DEFAULT_NER_MODEL_DIR
+        if default_model_path.exists():
+            model_dir = default_model_path
+            if verbose:
+                print(f"[資訊] 自動偵測到 NER 模型：{model_dir}")
+    
+    if model_dir and model_dir.exists():
+        if verbose:
+            print(f"[資訊] 使用 model_dir={model_dir} 執行 NER 推論")
+        try:
+            df = ner_infer_dataframe(df, desc_col="description_raw", cfg=NerInferenceConfig(model_dir=model_dir))
+            ner_enabled = True
+        except Exception as e:
+            print(f"[警告] NER 推論失敗，改用純規則模式：{e}")
+            ner_enabled = False
+    else:
+        if verbose:
+            print("[資訊] 未找到 NER 模型，使用純規則模式")
+
+    # 4) 規則式正規化
     df["_BASE_"] = df["description_raw"].map(normalize_base_text)
     df["類別"] = df.apply(pick_category, axis=1)
 
     rows = []
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
         base = str(row.get("_BASE_", ""))
-        cat = str(row.get("類別", "OT"))
         raw_desc = str(row.get("description_raw", ""))
+        
+        # 取得 NER 結果（如果有）
+        ner_fields = row.get("NER_Fields", {}) if ner_enabled else {}
+        if not isinstance(ner_fields, dict):
+            ner_fields = {}
+        
+        # NER 判斷的類別優先，否則用規則式
+        if ner_fields.get("類別"):
+            cat = ner_fields["類別"]
+        else:
+            cat = str(row.get("類別", "OT"))
+        
+        # 規則式提取（作為 fallback）
         tks = extract_tokens(base, cat, raw_desc)
+        
+        # 合併策略：NER 優先，規則式作為 fallback（不合併，避免重複）
+        merged_fields = {}
+        all_field_keys = set(tks.keys()) | set(ner_fields.keys())
+        for key in all_field_keys:
+            ner_val = str(ner_fields.get(key, "")).strip()
+            rule_val = str(tks.get(key, "")).strip()
+            # NER 結果優先，若為空則使用規則式（不合併，避免重複）
+            merged_fields[key] = ner_val if ner_val else rule_val
+        
+        # 如果 NER 有類別結果，使用 NER 的類別
+        if ner_fields.get("類別"):
+            merged_fields["類別"] = ner_fields["類別"]
+        else:
+            merged_fields["類別"] = cat
+        
+        # 處理尺寸和封裝重複問題：如果尺寸和封裝相同，只保留一個
+        size_val = merged_fields.get("尺寸", "")
+        pkg_val = merged_fields.get("封裝", "")
+        if size_val and pkg_val and size_val == pkg_val:
+            # 相同時，尺寸欄位清空，只保留封裝
+            merged_fields["尺寸"] = ""
+        
+        # 對合併結果進行 IEC/EIA 轉換
+        if merged_fields.get("阻值") and not merged_fields.get("阻值_IEC"):
+            merged_fields["阻值_IEC"] = resistance_to_iec(merged_fields["阻值"])
+        if merged_fields.get("容量") and not merged_fields.get("容量_EIA"):
+            merged_fields["容量_EIA"] = capacitance_to_eia(merged_fields["容量"])
 
-        # 覆蓋率：基底描述中有多少被提取欄位所解釋。
-        # 用於將模糊資料列路由至人工審核（預設閾值 15%）。
+        # 覆蓋率計算
         base_compact = re.sub(r"\s+", "", base)
         total_chars = max(len(base_compact), 1)
-        explained = "".join([str(v) for v in tks.values() if v])
+        explained = "".join([str(v) for v in merged_fields.values() if v])
         explained_chars = len(re.sub(r"\s+", "", explained))
         coverage_ratio = explained_chars / total_chars
 
-        norm = build_normalized_desc(cat, tks)
-        disp = display20(cat, norm, tks)
+        final_cat = merged_fields.get("類別", cat)
+        norm = build_normalized_desc(final_cat, merged_fields)
+        disp = display20(final_cat, norm, merged_fields)
 
         out_row = dict(row)  # 複製所有原始欄位 + 新增的工作欄位
-        # 提取的欄位 (V17 擴充)
+        # 提取的欄位（合併 NER + 規則式）
         out_row.update({
-            "阻值": tks.get("阻值",""),
-            "阻值_IEC": tks.get("阻值_IEC",""),
-            "容量": tks.get("容量",""),
-            "容量_EIA": tks.get("容量_EIA",""),
-            "電感值": tks.get("電感值",""),
-            "電壓": tks.get("電壓",""),
-            "電流": tks.get("電流",""),
-            "容差": tks.get("容差",""),
-            "功率": tks.get("功率",""),
-            "溫度係數": tks.get("溫度係數",""),
-            "介質": tks.get("介質",""),
-            "顏色": tks.get("顏色",""),
-            "頻率": tks.get("頻率",""),
-            "波長": tks.get("波長",""),
-            "間距": tks.get("間距",""),
-            "尺寸": tks.get("尺寸",""),
-            "封裝": tks.get("封裝",""),
-            "針腳數": tks.get("針腳數",""),
-            "方向": tks.get("方向",""),
-            "類型": tks.get("類型",""),
-            "法規": tks.get("法規",""),
-            "其餘規格": tks.get("其餘規格",""),
-            "判別比例": round(coverage_ratio, 4),
+            "阻值": merged_fields.get("阻值",""),
+            "阻值_IEC": merged_fields.get("阻值_IEC",""),
+            "容量": merged_fields.get("容量",""),
+            "容量_EIA": merged_fields.get("容量_EIA",""),
+            "電感值": merged_fields.get("電感值",""),
+            "電壓": merged_fields.get("電壓",""),
+            "電流": merged_fields.get("電流",""),
+            "容差": merged_fields.get("容差",""),
+            "功率": merged_fields.get("功率",""),
+            "溫度係數": merged_fields.get("溫度係數",""),
+            "介質": merged_fields.get("介質",""),
+            "顏色": merged_fields.get("顏色",""),
+            "頻率": merged_fields.get("頻率",""),
+            "波長": merged_fields.get("波長",""),
+            "間距": merged_fields.get("間距",""),
+            "尺寸": merged_fields.get("尺寸",""),
+            "封裝": merged_fields.get("封裝",""),
+            "針腳數": merged_fields.get("針腳數",""),
+            "方向": merged_fields.get("方向",""),
+            "類型": merged_fields.get("類型",""),
+            "法規": merged_fields.get("法規",""),
+            "製程": merged_fields.get("製程",""),
+            "其餘規格": merged_fields.get("其餘規格",""),
+            "類別": final_cat,
             "正規化Description": norm,
             "顯示名20": disp,
-            # 僅除錯用：協助工程師快速調整規則
-            "Pipe檢視": pipe_view(cat, tks) if debug else "",
+            "判別比例": coverage_ratio,
+            "NER_Used": "是" if ner_enabled and ner_fields else "否",
         })
         rows.append(out_row)
 
     out_main = pd.DataFrame(rows)
-
-    # 4) 可選的 NER 模型推論（新增額外欄位）
-    if model_dir:
-        if verbose:
-            print(f"[資訊] 使用 model_dir={model_dir} 執行 NER 推論")
-        out_main = ner_infer_dataframe(out_main, desc_col="description_raw", cfg=NerInferenceConfig(model_dir=model_dir))
 
     # 5) 群組彙總工作表（同料號不同正規化描述）
     col_pn = find_col(out_main, [r"^dicon\s*p/?n$", r"^dicon", r"料號", r"^p/?n$"]) or "DiCon P/N"
@@ -1147,7 +1293,7 @@ def run_pipeline(
     #   - 所有原始輸入欄位
     #   - 一小組穩定的正規化欄位
     # 且不需要中間除錯欄位。
-    # V17 擴充欄位列表
+    # V17 擴充欄位列表（含 NER 整合）
     normalized_cols = [
         "類別",
         "阻值",
@@ -1171,10 +1317,12 @@ def run_pipeline(
         "方向",
         "類型",
         "法規",
+        "製程",
         "其餘規格",
         "正規化Description",
         "顯示名20",
         "判別比例",
+        "NER_Used",
         "status",
         "review_reason",
     ]
