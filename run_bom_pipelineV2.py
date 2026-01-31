@@ -865,12 +865,13 @@ def display20(cat: str, norm: str, others: Optional[Dict[str, str]] = None, min_
         "功率",
         "頻率",
         "針腳數",
+        "間距",        # 間距提前（連接器重要）
+        "方向",        # 新增：連接器方向
         "封裝",
         "尺寸",
         "介質",
         "溫度係數",
         "波長",
-        "間距",
         "類型",
     ]
     
@@ -1103,33 +1104,50 @@ def decide_status(row: pd.Series) -> Tuple[str, str]:
     """
     決定資料列為 AUTO 或 NEED_REVIEW。
 
-    目前規則（簡單、安全）：
-      - 若類別為 OT -> REVIEW（通常需人工處理）
-      - 若正規化描述缺少 RES/CAP 的核心欄位 -> REVIEW
-      - 否則 AUTO
-
-    可透過新增模型信心閾值或約束檢查來強化此規則。
+    規則：
+      1. NER 有效標籤比例：扣除 IGNORE/O 後，有效標籤 < 總標籤的 1/3 -> REVIEW
+      2. 正規化描述 + 顯示名20 組合過短 -> REVIEW
+      3. 正規化描述為空 -> REVIEW
+      4. RES 類但缺少阻值 -> REVIEW
+      5. CAP 類但缺少容量 -> REVIEW
+      6. 否則 AUTO
+      
+    注意：重複顯示名但不同 P/N 在 run_pipeline 中處理（需跨行比較）
     """
     cat = str(row.get("類別", "")).strip()
     norm = str(row.get("正規化Description", "")).strip()
-    coverage = row.get("判別比例", None)
+    disp20 = str(row.get("顯示名20", "")).strip()
+    ner_result = str(row.get("NER_Result", "")).strip()
 
-    # 使用者要求的規則：若可識別/可判斷字元 < 15% -> 人工審核。
-    # 「判別比例」是盡力估算描述中有多少內容由提取的正規化欄位所解釋。
-    # 工程師日後可調整此指標。
-    try:
-        if coverage is not None and float(coverage) < 0.15:
-            return "NEED_REVIEW", f"low_coverage<{float(coverage):.2f}"
-    except Exception:
-        pass
-
-    val_res = str(row.get("阻值", "")).strip()
-    val_cap = str(row.get("容量", "")).strip()
-
+    # 1. NER 有效標籤比例檢查
+    if ner_result and ner_result != "[]":
+        try:
+            # 解析 NER_Result 字串，例如 "[('RES', 'Category'), (',', 'IGNORE'), ...]"
+            import ast
+            pairs = ast.literal_eval(ner_result)
+            if isinstance(pairs, list) and len(pairs) > 0:
+                total_tokens = len(pairs)
+                # 有效標籤 = 非 IGNORE、非 O
+                valid_tokens = sum(1 for _, label in pairs if label not in ("IGNORE", "O"))
+                threshold = total_tokens / 3
+                
+                if valid_tokens < threshold:
+                    return "NEED_REVIEW", f"ner_low_valid_{valid_tokens}/{total_tokens}"
+        except Exception:
+            pass
+    
+    # 2. 顯示名20 本身過短（例如 < 8 字元）
+    if len(disp20) < 8:
+        return "NEED_REVIEW", f"short_display20_len={len(disp20)}"
+    
+    # 3. 正規化描述為空
     if not norm:
         return "NEED_REVIEW", "normalized_description_empty"
-    if cat == "OT":
-        return "NEED_REVIEW", "category_OT"
+    
+    # 4. 核心欄位檢查
+    val_res = str(row.get("阻值", "")).strip()
+    val_cap = str(row.get("容量", "")).strip()
+    
     if cat == "RES" and not val_res:
         return "NEED_REVIEW", "missing_resistance"
     if cat == "CAP" and not val_cap:
@@ -1232,9 +1250,18 @@ def run_pipeline(
             merged_fields["類別"] = cat
         
         # 處理重複問題：
-        # 1. 尺寸和封裝相同時，只保留封裝
+        # 0. SMD 封裝代碼優先：如果尺寸是標準封裝代碼（4位數字如 0402, 0612, 1206），移到封裝
         size_val = merged_fields.get("尺寸", "")
         pkg_val = merged_fields.get("封裝", "")
+        smd_pkg_pattern = re.match(r'^(\d{4})$', size_val)  # 4位數字封裝代碼
+        if smd_pkg_pattern and not pkg_val:
+            # 尺寸是封裝代碼且封裝欄位為空，移動到封裝
+            merged_fields["封裝"] = size_val
+            merged_fields["尺寸"] = ""
+            pkg_val = size_val
+            size_val = ""
+        
+        # 1. 尺寸和封裝相同時，只保留封裝
         if size_val and pkg_val and size_val == pkg_val:
             merged_fields["尺寸"] = ""
         
@@ -1313,6 +1340,19 @@ def run_pipeline(
     statuses = out_main.apply(lambda r: decide_status(r), axis=1, result_type="expand")
     out_main["status"] = statuses[0]
     out_main["review_reason"] = statuses[1]
+    
+    # 6.1) 重複顯示名但不同 P/N 檢查
+    if col_pn in out_main.columns:
+        # 找出有相同顯示名20但不同 P/N 的項目
+        disp_pn_groups = out_main.groupby("顯示名20")[col_pn].apply(set).to_dict()
+        duplicate_names = {disp: pns for disp, pns in disp_pn_groups.items() if len(pns) > 1}
+        
+        # 標記這些項目為 NEED_REVIEW
+        for idx in out_main.index:
+            disp = out_main.at[idx, "顯示名20"]
+            if disp in duplicate_names and out_main.at[idx, "status"] == "AUTO":
+                out_main.at[idx, "status"] = "NEED_REVIEW"
+                out_main.at[idx, "review_reason"] = f"duplicate_display_diff_pn"
 
     out_auto = out_main[out_main["status"] == "AUTO"].copy()
     out_review = out_main[out_main["status"] != "AUTO"].copy()
