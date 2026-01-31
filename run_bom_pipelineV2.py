@@ -837,44 +837,64 @@ def display20(cat: str, norm: str, others: Optional[Dict[str, str]] = None, min_
     策略：
       - 以類別作為前綴（RES/CAP/IND/IC/CN/OT）
       - 阻值使用 IEC 格式，容量使用 EIA 格式
+      - 依優先順序智能填充到接近 20 字元
       - 不包含法規欄位
     """
     prefix = PREFIX.get(cat, "OT")
+    result = prefix
     
-    # 優先使用 IEC/EIA 格式的值
-    tokens: List[str] = []
-    if others:
-        # 阻值優先使用 IEC 格式
-        res_val = others.get("阻值_IEC", "") or others.get("阻值", "")
-        if res_val:
-            tokens.append(res_val)
-        
-        # 容量優先使用 EIA 格式
-        cap_val = others.get("容量_EIA", "") or others.get("容量", "")
-        if cap_val:
-            tokens.append(cap_val)
-        
-        # 其他欄位（不包含法規）
-        for k in ["電感值", "電壓", "電流", "容差", "功率", "介質", "尺寸", "封裝"]:
-            v = others.get(k, "")
-            if v:
-                tokens.append(v)
-    else:
+    if not others:
         # 如果沒有 others，從 norm 中提取
         tail = norm.split(" ", 1)[1] if " " in norm else ""
         tokens = tail.split()
+        for tok in tokens:
+            if len(result) + len(tok) <= max_len:
+                result += tok
+            else:
+                break
+        return result
     
-    # 去重同時保持順序
-    dedup_tokens: List[str] = []
-    seen_tok: set[str] = set()
-    for tok in tokens:
-        if tok in seen_tok:
+    # 定義欄位優先順序（依重要性）
+    field_priority = [
+        ("阻值_IEC", "阻值"),      # 阻值優先 IEC
+        ("容量_EIA", "容量"),      # 容量優先 EIA
+        "電感值",
+        "電壓",
+        "電流",
+        "容差",
+        "功率",
+        "頻率",
+        "針腳數",
+        "封裝",
+        "尺寸",
+        "介質",
+        "溫度係數",
+        "波長",
+        "間距",
+        "類型",
+    ]
+    
+    seen_values: set[str] = set()
+    
+    for field in field_priority:
+        # 處理雙欄位（優先/備用）
+        if isinstance(field, tuple):
+            val = others.get(field[0], "") or others.get(field[1], "")
+        else:
+            val = others.get(field, "")
+        
+        if not val or val in seen_values:
             continue
-        dedup_tokens.append(tok)
-        seen_tok.add(tok)
-
-    base = prefix + "".join(dedup_tokens)
-    return base[:max_len]
+        
+        # 智能填充：檢查是否超過長度限制
+        if len(result) + len(val) <= max_len:
+            result += val
+            seen_values.add(val)
+        else:
+            # 已達長度上限，停止添加
+            break
+    
+    return result
 
 
 def pipe_view(cat: str, t: Dict[str, str]) -> str:
@@ -1006,7 +1026,8 @@ def ner_infer_dataframe(df: pd.DataFrame, desc_col: str, cfg: NerInferenceConfig
             # 針對阻值：尋找 數字+單位 的模式
             if field_type == "Resistance":
                 # 匹配阻值模式：數字 + 可選單位字母 + 可選Ω
-                m = re.search(r'(\d+(?:\.\d+)?[munMk]?[ΩOR]?)', combined)
+                # 注意：包含大小寫 K/k, M/m 等
+                m = re.search(r'(\d+(?:\.\d+)?[munMKk]?[ΩOR]?)', combined)
                 if m:
                     return m.group(1)
             
@@ -1061,25 +1082,17 @@ def ner_infer_dataframe(df: pd.DataFrame, desc_col: str, cfg: NerInferenceConfig
 
     ner_results = []
     ner_fields_list = []
-    vendor_names = []
-    
     print("[資訊] 開始 NER 推論...")
     for idx, row in df.iterrows():
-        pairs, fields_zh, vendor = infer_one(row.get(desc_col, ""))
+        pairs, fields_zh, _ = infer_one(row.get(desc_col, ""))
         ner_results.append(str(pairs))
         ner_fields_list.append(fields_zh)
-        vendor_names.append(vendor)
-        
-        # DEBUG: 印出第一筆有阻值的資料
-        if idx < 3 and "阻值" in fields_zh:
-            print(f"[DEBUG] NER row {idx} 阻值: {fields_zh['阻值']} (RAW: {fields_zh})")
             
     print(f"[資訊] NER 推論完成，共處理 {len(df)} 筆資料")
 
     df = df.copy()
     df["NER_Result"] = ner_results
     df["NER_Fields"] = ner_fields_list  # 結構化欄位字典
-    df["Vendor_Name_Model"] = vendor_names
     return df
 
 
@@ -1218,12 +1231,17 @@ def run_pipeline(
         else:
             merged_fields["類別"] = cat
         
-        # 處理尺寸和封裝重複問題：如果尺寸和封裝相同，只保留一個
+        # 處理重複問題：
+        # 1. 尺寸和封裝相同時，只保留封裝
         size_val = merged_fields.get("尺寸", "")
         pkg_val = merged_fields.get("封裝", "")
         if size_val and pkg_val and size_val == pkg_val:
-            # 相同時，尺寸欄位清空，只保留封裝
             merged_fields["尺寸"] = ""
+        
+        # 2. 間距和尺寸相同時，只保留尺寸（例如 L=60mm 同時識別為間距和尺寸）
+        pitch_val = merged_fields.get("間距", "")
+        if pitch_val and size_val and pitch_val == size_val:
+            merged_fields["間距"] = ""
         
         # 對合併結果進行 IEC/EIA 轉換
         if merged_fields.get("阻值") and not merged_fields.get("阻值_IEC"):
