@@ -314,9 +314,6 @@ def find_col(df: pd.DataFrame, patterns: List[str]) -> Optional[str]:
 # *類別字串* 是客戶端輸出，用於正規化後的 BOM。
 # 請保持穩定、一致且易讀。
 #
-# 在早期版本中，電感被錯誤標記為 "ID"（易與二極體混淆）。
-# 使用者要求將電感明確顯示為 "IND"。
-#
 # 若貴公司日後需要更細緻的分類（如 DIODE vs IND），
 # 請擴充 `CAT_RULES`，下游邏輯無需額外修改即可運作。
 
@@ -638,8 +635,13 @@ def capacitance_to_eia(value: str) -> str:
 def extract_generic_meas(base: str, raw_desc: str = "") -> Dict[str, str]:
     """
     從正規化基底文字中提取常見量測值。
-    回傳提取欄位的字典（字串形式）。
-    V17 修正：新增電流、電感值、溫度係數、波長、針腳數、間距、顏色、頻率、類型、法規等欄位。
+    
+    【功能說明】
+    提取電阻值、電容值、電感值、電壓、電流、容差、功率、溫度係數、
+    波長、針腳數、間距、顏色、頻率、類型、法規等欄位。
+    
+    【修改指南】
+    若需新增提取規則，請在此函式中添加正規表達式。
     
     Args:
         base: 已正規化的基底文字（不含括號內容）
@@ -684,12 +686,12 @@ def extract_generic_meas(base: str, raw_desc: str = "") -> Dict[str, str]:
         # 新增 EIA 轉換欄位
         out["容量_EIA"] = capacitance_to_eia(out["容量"])
 
-    # ===== V17 新增：電感值 (nH/uH/mH) =====
+    # 電感值 (nH/uH/mH)
     m = IND_RE.search(s)
     if m:
         out["電感值"] = f"{m.group(1)}{m.group(2)}"
 
-    # ===== V17 新增：電流 (mA/uA/A) =====
+    # 電流 (mA/uA/A)
     m = CURRENT_RE.search(s)
     if m:
         out["電流"] = f"{m.group(1)}{m.group(2)}"
@@ -704,12 +706,12 @@ def extract_generic_meas(base: str, raw_desc: str = "") -> Dict[str, str]:
         if m:
             out["電壓"] = f"{m.group(1)}V"
         else:
-            # V17 新增：檢查安規裸電壓 (275/400/630)
+            # 檢查安規裸電壓 (275/400/630)
             m = VOLT_BARE_RE.search(s)
             if m:
                 out["電壓"] = f"{m.group(1)}V"
 
-    # 容差 (V17 修正：支援更多符號格式)
+    # 容差
     m = TOL_RE.search(s)
     if m:
         out["容差"] = f"{m.group(1)}%"
@@ -719,23 +721,23 @@ def extract_generic_meas(base: str, raw_desc: str = "") -> Dict[str, str]:
     if m:
         out["功率"] = normalize_power_token(m.group(0))
 
-    # ===== V17 新增：溫度係數 (PPM) =====
+    # 溫度係數 (PPM)
     m = TEMP_COEF_RE.search(s)
     if m:
         out["溫度係數"] = f"{m.group(1)}PPM"
 
-    # ===== V17 新增：波長 (nm) =====
+    # 波長 (nm)
     m = WAVELENGTH_RE.search(s)
     if m:
         out["波長"] = f"{m.group(1)}nm"
 
-    # ===== V17 新增：針腳數 (8P, 2x8P, 16PIN) =====
+    # 針腳數 (8P, 2x8P, 16PIN)
     m = PIN_COUNT_RE.search(s)
     if m:
         pin_str = m.group(1).replace(" ", "")
         out["針腳數"] = pin_str
 
-    # ===== V17 新增：間距 (P=2.54mm, L=5mm) =====
+    # 間距 (P=2.54mm, L=5mm)
     m = PITCH_RE.search(s)
     if m:
         out["間距"] = f"{m.group(1)}mm"
@@ -744,22 +746,22 @@ def extract_generic_meas(base: str, raw_desc: str = "") -> Dict[str, str]:
         if m:
             out["間距"] = m.group(0)
 
-    # ===== V17 新增：顏色 =====
+    # 顏色
     m = COLOR_RE.search(s)
     if m:
         out["顏色"] = m.group(1).upper()
 
-    # ===== V17 新增：頻率 (MHz/kHz/GHz) =====
+    # 頻率 (MHz/kHz/GHz)
     m = FREQ_RE.search(s)
     if m:
         out["頻率"] = f"{m.group(1)}{m.group(2)}"
 
-    # ===== V17 新增：類型 (介質類型、電晶體極性等) =====
+    # 類型 (介質類型、電晶體極性等)
     m = TYPE_RE.search(s)
     if m:
         out["類型"] = m.group(1).upper()
 
-    # ===== V17 新增：法規 =====
+    # 法規
     m = COMPLIANCE_RE.search(s)
     if m:
         out["法規"] = m.group(1).upper()
@@ -787,7 +789,7 @@ def extract_tokens(base: str, cat: str, raw_desc: str = "") -> Dict[str, str]:
     """
     out = extract_generic_meas(base, raw_desc)
 
-    # CAP 的簡易介電質提取（V17 擴充溫度代碼列表）
+    # CAP 的介電質提取
     if cat == "CAP":
         m = re.search(r"\b(C0G|NP0|NPO|X7R|X5R|Y5V|P100|N150|N750|U2J|X6S|Z5U|X7S|X8R|Y5U)\b", base, re.I)
         if m:
@@ -1365,12 +1367,8 @@ def run_pipeline(
     out_auto = out_main[out_main["status"] == "AUTO"].copy()
     out_review = out_main[out_main["status"] != "AUTO"].copy()
 
-    # 6.5) 輸出欄位策略（交接時的重要說明）
-    # 公司使用者通常需要：
-    #   - 所有原始輸入欄位
-    #   - 一小組穩定的正規化欄位
-    # 且不需要中間除錯欄位。
-    # V17 擴充欄位列表（含 NER 整合）
+    # 6.5) 輸出欄位設定
+    # 【修改指南】若需新增或移除輸出欄位，請編輯以下 normalized_cols 列表
     normalized_cols = [
         "類別",
         "阻值",
