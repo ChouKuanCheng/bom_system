@@ -1,54 +1,62 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-run_bom_pipeline.py
+================================================================================
+BOM 自動正規化系統 (BOM Normalization Pipeline V2)
+================================================================================
 
-一鍵式 BOM 清理 + 正規化流水線（規則式處理，移植自 Notebook V3 邏輯），
-可選擇性地結合 DistilBERT NER 推論輸出進行強化。
+【系統簡介】
+本程式用於自動處理 BOM (Bill of Materials) Excel 檔案，將零件描述欄位正規化，
+提取關鍵規格（阻值、容量、封裝等），並標準化顯示名稱。
 
-本腳本設計為可交接給其他工程團隊使用。
-刻意使用詳細的註解和清晰的關注點分離。
+【主要功能】
+1. 讀取 BOM Excel 檔案（自動偵測標頭列位置）
+2. 使用 AI 模型 (DistilBERT NER) 識別零件規格
+3. 規則式提取作為備援
+4. 分類零件類型：RES(電阻)/CAP(電容)/IND(電感)/IC/CN(連接器)/OT(其他)
+5. 建立「正規化Description」和「顯示名20」
+6. 自動區分 AUTO（可自動處理）和 NEED_REVIEW（需人工審核）
 
-高階功能概述
------------
-1) 讀取客戶 BOM Excel（標頭列可能不在第一列）。
-2) 正規化欄位名稱（僅將 Description 欄位標準化為 `description_raw`）。
-   - 所有原始欄位均保留原樣。
-3) 規則式正規化（移植自 BOM_pipeline0923V3.ipynb）：
-   - 建立正規化基底文字 (_BASE_) 供穩健的正規表達式比對
-   - 分類零件類別 (RES/CAP/IC/CN/ID/OT)
-   - 透過正規表達式提取關鍵規格
-   - 建立「正規化Description」和「顯示名20」
-   - 產生「群組彙總」工作表以檢查「同料號不同名」
-4) 可選：執行 NER 模型推論（DistilBERT Token Classification）：
-   - 新增 NER_Result 和 Vendor_Name_Model 欄位
-5) 輸出：
-   - <stem>_final.xlsx（主分頁 + 群組彙總）
-   - <stem>_AUTO.xlsx（通過基本驗證的資料列）
-   - <stem>_REVIEW.xlsx（需人工審核的資料列）
+【輸出檔案】
+- <原檔名>_final.xlsx    → 完整處理結果（含主分頁+群組彙總）
+- <原檔名>_AUTO.xlsx     → 自動通過的資料（可直接使用）
+- <原檔名>_REVIEW.xlsx   → 需人工審核的資料
 
-使用方式
--------
-建議用法（明確指定輸入路徑）：
+================================================================================
+⚠️ 廠商設定區（請根據實際環境修改以下設定）
+================================================================================
 
-    python run_bom_pipeline.py --input "BOM.xlsx" --out_dir "outputs"
+【方法一】使用命令列參數（建議）
 
-若不確定工作表名稱（常見情況），可省略 --sheet（預設：自動偵測）。
+    python run_bom_pipelineV2.py --input "您的BOM檔案.xlsx" --out_dir "輸出資料夾"
 
-可選：包含模型推論輸出（DistilBERT NER）：
+【方法二】使用圖形介面選擇檔案
 
-    python run_bom_pipeline.py --input "BOM.xlsx" --out_dir "outputs" --model_dir "distilbert_ner_final"
+    python run_bom_pipelineV2.py --gui
 
-便利用法：也可以 *位置參數* 方式傳入輸入路徑：
+【方法三】直接雙擊執行（會自動選擇當前資料夾最新的 Excel 檔案）
 
-    python run_bom_pipeline.py "BOM.xlsx"
+    python run_bom_pipelineV2.py
 
-備註
-----
-- 本腳本以「規則正規化」作為正規化描述的權威來源。
-- NER 輸出附加為額外證據；後續可強化合併策略。
+【完整參數說明】
 
-作者：(交接用)
+    --input     : 輸入 BOM Excel 檔案路徑（必填或使用 --gui）
+    --out_dir   : 輸出目錄路徑（預設: outputs）
+    --sheet     : 指定工作表名稱（預設: 自動偵測含 Description 的工作表）
+    --model_dir : NER 模型目錄（預設: distilbert_ner_final，若不存在則使用純規則式）
+    --gui       : 開啟檔案選擇對話框
+    --verbose   : 顯示詳細處理訊息
+    --debug     : 除錯模式（保留中間欄位）
+
+【範例】
+
+    # 處理指定檔案，輸出到 results 資料夾
+    python run_bom_pipelineV2.py --input "C:/BOM/客戶BOM.xlsx" --out_dir "C:/BOM/results"
+
+    # 使用圖形介面選檔
+    python run_bom_pipelineV2.py --gui --verbose
+
+================================================================================
 """
 from __future__ import annotations
 
