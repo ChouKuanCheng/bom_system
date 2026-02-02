@@ -17,6 +17,10 @@ Pipeline 輸出轉訓練資料工具
 
 【使用方式】
 
+    方式一：直接執行（會彈出檔案選擇對話框）
+    python convert_to_training_data.py
+
+    方式二：使用命令列參數
     python convert_to_training_data.py --input "審核完成.xlsx" --output "新訓練資料.xlsx"
 
 ================================================================================
@@ -183,14 +187,43 @@ def convert_excel(input_path: Path, output_path: Path, desc_col: str = "正規�
     print(f"   跳過：{skipped} 筆")
 
 
+def select_file() -> Path | None:
+    """
+    開啟檔案選擇對話框讓使用者選擇 Excel 檔案
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+    
+    # 建立隱藏的根視窗
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)  # 確保對話框顯示在最上層
+    
+    # 開啟檔案選擇對話框
+    file_path = filedialog.askopenfilename(
+        title="選擇要轉換的 Excel 檔案",
+        filetypes=[
+            ("Excel 檔案", "*.xlsx *.xls"),
+            ("所有檔案", "*.*")
+        ]
+    )
+    
+    root.destroy()
+    
+    if file_path:
+        return Path(file_path)
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="將 Pipeline 輸出轉換為 NER 訓練資料格式"
     )
     parser.add_argument(
         "--input", "-i",
-        required=True,
-        help="輸入的 Excel 檔案（廠商審核完成的 _REVIEW.xlsx）"
+        required=False,
+        default=None,
+        help="輸入的 Excel 檔案（廠商審核完成的 _REVIEW.xlsx）。若未指定，將開啟檔案選擇對話框"
     )
     parser.add_argument(
         "--output", "-o",
@@ -205,7 +238,17 @@ def main():
     
     args = parser.parse_args()
     
-    input_path = Path(args.input).expanduser().resolve()
+    # 若未指定輸入檔案，開啟檔案選擇對話框
+    if args.input:
+        input_path = Path(args.input).expanduser().resolve()
+    else:
+        print("📂 請選擇要轉換的 Excel 檔案...")
+        input_path = select_file()
+        if input_path is None:
+            print("❌ 未選擇檔案，程式結束")
+            return
+        input_path = input_path.resolve()
+    
     if not input_path.exists():
         raise FileNotFoundError(f"找不到輸入檔案：{input_path}")
     
