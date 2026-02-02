@@ -127,7 +127,7 @@ def build_labels_from_fields(tokens: List[str], row: pd.Series) -> List[str]:
     return labels
 
 
-def convert_row(row: pd.Series, desc_col: str = "正規化Description") -> Tuple[str, str]:
+def convert_row(row: pd.Series, desc_col: str = "Description") -> Tuple[str, str]:
     """
     將一筆資料轉換為訓練格式
     
@@ -153,7 +153,7 @@ def convert_row(row: pd.Series, desc_col: str = "正規化Description") -> Tuple
     return desc, str(labels)
 
 
-def convert_excel(input_path: Path, output_path: Path, desc_col: str = "正規化Description"):
+def convert_excel(input_path: Path, output_path: Path, desc_col: str = "Description"):
     """
     轉換整個 Excel 檔案
     """
@@ -232,8 +232,8 @@ def main():
     )
     parser.add_argument(
         "--desc_col",
-        default="正規化Description",
-        help="描述欄位名稱。預設：正規化Description"
+        default="Description",
+        help="原始描述欄位名稱。預設：Description"
     )
     
     args = parser.parse_args()
@@ -252,10 +252,14 @@ def main():
     if not input_path.exists():
         raise FileNotFoundError(f"找不到輸入檔案：{input_path}")
     
+    # 設定輸出路徑
     if args.output:
         output_path = Path(args.output).expanduser().resolve()
     else:
-        output_path = input_path.parent / f"{input_path.stem}_training.xlsx"
+        # 預設輸出到「待訓練資料」資料夾
+        output_dir = Path(__file__).parent / "待訓練資料"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{input_path.stem}_training.xlsx"
     
     convert_excel(input_path, output_path, args.desc_col)
 
