@@ -1330,24 +1330,13 @@ def run_pipeline(
 
     out_main = pd.DataFrame(rows)
 
-    # 5) 群組彙總工作表
-    # 欄位：DiCon P/N、正規化Description、顯示名20、status、NER_Result
-    col_pn = find_col(out_main, [r"^dicon\s*p/?n$", r"^dicon", r"料號", r"^p/?n$"]) or "DiCon P/N"
-    if col_pn in out_main.columns:
-        # 選取需要的欄位
-        group_cols = [col_pn, "正規化Description", "顯示名20", "status"]
-        if "NER_Result" in out_main.columns:
-            group_cols.append("NER_Result")
-        out_group = out_main[group_cols].copy()
-    else:
-        out_group = pd.DataFrame({"NOTE": ["未找到 PN 欄位；已略過群組彙總。"]})
-
-    # 6) AUTO/REVIEW 路由
+    # 5) AUTO/REVIEW 路由（先計算 status，再建立群組彙總）
     statuses = out_main.apply(lambda r: decide_status(r), axis=1, result_type="expand")
     out_main["status"] = statuses[0]
     out_main["review_reason"] = statuses[1]
     
-    # 6.1) 重複顯示名但不同 P/N 檢查
+    # 5.1) 重複顯示名但不同 P/N 檢查
+    col_pn = find_col(out_main, [r"^dicon\s*p/?n$", r"^dicon", r"料號", r"^p/?n$"]) or "DiCon P/N"
     if col_pn in out_main.columns:
         # 找出有相同顯示名20但不同 P/N 的項目
         disp_pn_groups = out_main.groupby("顯示名20")[col_pn].apply(set).to_dict()
@@ -1359,6 +1348,16 @@ def run_pipeline(
             if disp in duplicate_names and out_main.at[idx, "status"] == "AUTO":
                 out_main.at[idx, "status"] = "NEED_REVIEW"
                 out_main.at[idx, "review_reason"] = f"duplicate_display_diff_pn"
+
+    # 6) 群組彙總工作表
+    # 欄位：DiCon P/N、正規化Description、顯示名20、status、NER_Result
+    if col_pn in out_main.columns:
+        # 動態選取存在的欄位
+        desired_cols = [col_pn, "正規化Description", "顯示名20", "status", "NER_Result"]
+        group_cols = [c for c in desired_cols if c in out_main.columns]
+        out_group = out_main[group_cols].copy()
+    else:
+        out_group = pd.DataFrame({"NOTE": ["未找到 PN 欄位；已略過群組彙總。"]})
 
     out_auto = out_main[out_main["status"] == "AUTO"].copy()
     out_review = out_main[out_main["status"] != "AUTO"].copy()
