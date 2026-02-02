@@ -50,7 +50,7 @@ python run_bom_pipelineV2.py --input "C:/BOM/客戶BOM.xlsx" --out_dir "C:/BOM/r
 
 | 檔案名稱 | 說明 |
 |---------|------|
-| `<原檔名>_final.xlsx` | 完整處理結果，含「主分頁」和「群組彙總」兩個工作表 |
+| `<原檔名>_final.xlsx` | 完整處理結果，含「主分頁」和「群組彙總」兩個工作表。群組彙總欄位：DiCon P/N、正規化Description、顯示名20、status、NER_Result |
 | `<原檔名>_AUTO.xlsx` | 自動通過驗證的資料，可直接使用 |
 | `<原檔名>_REVIEW.xlsx` | 需要人工審核的資料 |
 

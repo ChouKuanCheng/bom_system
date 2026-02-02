@@ -18,13 +18,16 @@ BOM 自動正規化系統 (BOM Normalization Pipeline V2)
 6. 自動區分 AUTO（可自動處理）和 NEED_REVIEW（需人工審核）
 
 【輸出檔案】
-- <原檔名>_final.xlsx    → 完整處理結果（含主分頁+群組彙總）
+- <原檔名>_final.xlsx    → 完整處理結果（含主分頁+群組彙總，群組彙總含 P/N、正規化Description、顯示名20、status、NER_Result）
 - <原檔名>_AUTO.xlsx     → 自動通過的資料（可直接使用）
 - <原檔名>_REVIEW.xlsx   → 需人工審核的資料
 
 ================================================================================
 ⚠️ 廠商設定區（請根據實際環境修改以下設定）
 ================================================================================
+
+#開始前於終端機輸入 pip install xlrd 
+#開始前於終端機輸入 pip install openpyxl
 
 【方法一】使用命令列參數（建議）
 
@@ -875,8 +878,8 @@ def display20(cat: str, norm: str, others: Optional[Dict[str, str]] = None, min_
         "功率",
         "頻率",
         "針腳數",
-        "間距",        # 間距提前（連接器重要）
-        "方向",        # 新增：連接器方向
+        "間距",       
+        "方向",        
         "封裝",
         "尺寸",
         "介質",
@@ -1286,12 +1289,7 @@ def run_pipeline(
         if merged_fields.get("容量") and not merged_fields.get("容量_EIA"):
             merged_fields["容量_EIA"] = capacitance_to_eia(merged_fields["容量"])
 
-        # 覆蓋率計算
-        base_compact = re.sub(r"\s+", "", base)
-        total_chars = max(len(base_compact), 1)
-        explained = "".join([str(v) for v in merged_fields.values() if v])
-        explained_chars = len(re.sub(r"\s+", "", explained))
-        coverage_ratio = explained_chars / total_chars
+
 
         final_cat = merged_fields.get("類別", cat)
         norm = build_normalized_desc(final_cat, merged_fields)
@@ -1326,23 +1324,21 @@ def run_pipeline(
             "類別": final_cat,
             "正規化Description": norm,
             "顯示名20": disp,
-            "判別比例": coverage_ratio,
             "NER_Used": "是" if ner_enabled and ner_fields else "否",
         })
         rows.append(out_row)
 
     out_main = pd.DataFrame(rows)
 
-    # 5) 群組彙總工作表（同料號不同正規化描述）
+    # 5) 群組彙總工作表
+    # 欄位：DiCon P/N、正規化Description、顯示名20、status、NER_Result
     col_pn = find_col(out_main, [r"^dicon\s*p/?n$", r"^dicon", r"料號", r"^p/?n$"]) or "DiCon P/N"
     if col_pn in out_main.columns:
-        grp = out_main.groupby(col_pn)["正規化Description"].agg(lambda s: sorted(set(map(str, s))))
-        summary = grp.reset_index()
-        summary["正規化描述數"] = summary["正規化Description"].map(len)
-        summary["同料不同名?"] = summary["正規化描述數"].map(lambda n: "同料不同名" if n > 1 else "—")
-        disp_map = out_main.groupby(col_pn)["顯示名20"].first().to_dict()
-        summary["顯示名20(例)"] = summary[col_pn].map(disp_map)
-        out_group = summary[[col_pn, "顯示名20(例)", "正規化描述數", "同料不同名?", "正規化Description"]]
+        # 選取需要的欄位
+        group_cols = [col_pn, "正規化Description", "顯示名20", "status"]
+        if "NER_Result" in out_main.columns:
+            group_cols.append("NER_Result")
+        out_group = out_main[group_cols].copy()
     else:
         out_group = pd.DataFrame({"NOTE": ["未找到 PN 欄位；已略過群組彙總。"]})
 
@@ -1396,7 +1392,6 @@ def run_pipeline(
         "其餘規格",
         "正規化Description",
         "顯示名20",
-        "判別比例",
         "NER_Used",
         "status",
         "review_reason",
