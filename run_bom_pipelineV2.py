@@ -26,8 +26,7 @@ BOM 自動正規化系統 (BOM Normalization Pipeline V2)
 ⚠️ 廠商設定區（請根據實際環境修改以下設定）
 ================================================================================
 
-#開始前於終端機輸入 pip install xlrd 
-#開始前於終端機輸入 pip install openpyxl
+首次執行前請先安裝套件：pip install -r requirements.txt
 
 【方法一】使用命令列參數（建議）
 
