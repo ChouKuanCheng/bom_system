@@ -355,14 +355,14 @@ def pick_category(row: pd.Series) -> str:
 # -----------------------------------------------------------------------------
 # 通用量測值
 RES_RE = re.compile(r"\b(\d+(?:\.\d+)?)(R|K|M)?(\d+)?\b", re.I)  # 處理 4K7, 10R, 1M
-# V17 修正：容量正規表達式允許數字和單位之間有空格
+# 容量正規表達式（允許數字和單位之間有空格）
 CAP_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([UuNnPp])[Ff]\b", re.I)
 CAP_CODE_RE = re.compile(r"\b(\d{3})\b")  # 如 104 代碼（盡力匹配）
 
-# ===== V17 新增：電流 (mA/uA/A) =====
+# 電流 (mA/uA/A)
 CURRENT_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([uUmM]?[Aa])\b", re.I)
 
-# ===== V17 新增：電感值 (nH/uH/mH) =====
+# 電感值 (nH/uH/mH)
 IND_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([nNuUmM][Hh])\b", re.I)
 
 # ===== 新增：直流電阻 DCR (mΩ/uΩ) =====
@@ -372,7 +372,7 @@ DCR_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([mMuU]?[ΩO])\b", re.I)
 # 電壓模式
 #  - 範圍：1.65~3.6V, 1.65-3.6V, 1.65 to 3.6V
 #  - 單一：3.6V, 5VDC
-#  - V17 新增：裸電壓 (275/400/630) 安規電壓
+#  - 裸電壓 (275/400/630) 安規電壓
 VOLT_RANGE_RE = re.compile(
     r"\b(\d+(?:\.\d+)?)\s*(?:~|\-|TO)\s*(\d+(?:\.\d+)?)\s*k?V(?:AC|DC)?\b",
     re.I,
@@ -380,30 +380,30 @@ VOLT_RANGE_RE = re.compile(
 VOLT_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*k?V(?:AC|DC)?\b", re.I)
 VOLT_BARE_RE = re.compile(r"\b(275|400|630)\b(?![\w%])")  # 安規裸電壓
 
-# V17 修正：容差正規表達式支援 +/- 和全形符號
+# 容差正規表達式（支援 +/- 和全形符號）
 TOL_RE = re.compile(r"[±\+\-/]?\s*(\d+(?:\.\d+)?)\s*[%％]", re.I)
 PWR_RE = re.compile(r"\b(\d+/\d+|\d+(?:\.\d+)?)\s?([mM]?[Ww])\b", re.I)
 
-# ===== V17 新增：溫度係數 (PPM) =====
+# 溫度係數 (PPM)
 TEMP_COEF_RE = re.compile(r"[<>≦≤±\+\-/]?\s*(\d+(?:\.\d+)?)\s*PPM\b", re.I)
 
-# ===== V17 新增：波長 (nm) =====
+# 波長 (nm)
 WAVELENGTH_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*nm\b", re.I)
 
-# ===== V17 新增：針腳數 (8P, 2x8P, 16PIN) =====
+# 針腳數 (8P, 2x8P, 16PIN)
 PIN_COUNT_RE = re.compile(r"\b(\d+(?:\s*[xX]\s*\d+)?)\s*[Pp](?:IN)?[Ss]?\b", re.I)
 
-# ===== V17 新增：間距 (P=2.54mm, L=5mm) =====
+# 間距 (P=2.54mm, L=5mm)
 PITCH_RE = re.compile(r"\b[PLWHplwh][:=]?\s*(\d+(?:\.\d+)?)\s*mm\b", re.I)
 PITCH_DIM_RE = re.compile(r"\b(\d+(?:\.\d+)?)(?:\s*[xX]\s*(\d+(?:\.\d+)?)){1,2}\s*mm\b", re.I)
 
-# ===== V17 新增：顏色 =====
+# 顏色
 COLOR_RE = re.compile(r"\b(RED|GREEN|BLUE|WHITE|YELLOW|AMBER|RGB|BLACK|NATURAL)\b", re.I)
 
-# ===== V17 新增：頻率 (MHz/kHz/GHz) =====
+# 頻率 (MHz/kHz/GHz)
 FREQ_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*([kKmMgG]?[Hh][Zz])\b", re.I)
 
-# ===== V17 新增：類型 (介質類型、電晶體極性等) =====
+# 類型 (介質類型、電晶體極性等)
 TYPE_RE = re.compile(
     r"\b(CERAMIC|CER|TANTALUM|TANT|ELEC|ELECTROLYTIC|FILM|PP|THIN|THICK|"
     r"NPN|PNP|N-CH|P-CH|N-TYPE|P-TYPE|BI[-\s]?DIRECTIONAL|UNI[-\s]?DIRECTIONAL|"
@@ -411,7 +411,7 @@ TYPE_RE = re.compile(
     re.I,
 )
 
-# ===== V17 新增：法規 =====
+# 法規
 COMPLIANCE_RE = re.compile(
     r"\b(RoHS|HF|Halogen\s*Free|Pb\s*Free|Lead[-\s]*Free|REACH|UL94V0|AEC-Q200|Green|Eco)\b",
     re.I,
