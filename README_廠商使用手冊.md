@@ -14,16 +14,73 @@
 python --version
 ```
 
-### 2. 安裝相依套件
-在程式資料夾中執行：
-```bash
+### 2. 建立虛擬環境並安裝相依套件
+
+> ⚠️ **強烈建議使用虛擬環境**，避免與系統其他 Python 專案產生套件衝突。
+
+#### Windows (PowerShell)
+
+```powershell
+# 1. 進入程式資料夾後，建立虛擬環境
+python -m venv .venv
+
+# 2. 啟動虛擬環境
+.\.venv\Scripts\Activate.ps1
+
+# 3. 安裝相依套件（包含 NER 模型所需的 PyTorch 和 Transformers）
 pip install -r requirements.txt
 ```
 
+> 📌 **PowerShell 執行政策問題**：若出現「無法載入檔案」錯誤，請先執行：
+> ```powershell
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+> ```
+
+#### Windows (命令提示字元 CMD)
+
+```cmd
+# 1. 建立虛擬環境
+python -m venv .venv
+
+# 2. 啟動虛擬環境
+.\.venv\Scripts\activate.bat
+
+# 3. 安裝相依套件
+pip install -r requirements.txt
+```
+
+#### macOS / Linux
+
+```bash
+# 1. 建立虛擬環境
+python3 -m venv .venv
+
+# 2. 啟動虛擬環境
+source .venv/bin/activate
+
+# 3. 安裝相依套件
+pip install -r requirements.txt
+```
+
+#### 確認虛擬環境已啟動
+
+啟動成功後，命令列前面會出現 `(.venv)` 前綴：
+```
+(.venv) C:\path\to\bom_system>
+```
+
+#### 退出虛擬環境
+
+使用完畢後，輸入以下指令退出：
+```bash
+deactivate
+```
+
 ### 3. NER 模型資料夾
-程式會自動尋找 `distilbert_ner_final` 資料夾作為 AI 模型。
+程式會自動尋找 `distilbert_ner_final (不可修改)` 資料夾作為 AI 模型。
 - 若找不到，程式會使用純規則式處理（仍可正常運作）
 - 若需要 AI 功能，請確保模型資料夾在程式同一目錄下
+- **注意**：NER 模型需要 `torch` 和 `transformers` 套件，這些套件較大（約 2GB），首次安裝需要一些時間
 
 ---
 

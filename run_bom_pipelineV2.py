@@ -669,7 +669,7 @@ def extract_generic_meas(base: str, raw_desc: str = "") -> Dict[str, str]:
         # 新增 IEC 轉換欄位
         out["阻值_IEC"] = resistance_to_iec(out["阻值"])
 
-    # 電容值（如 10UF/100NF/1PF，V17 修正：允許空格）
+    # 電容值（如 10UF/100NF/1PF，允許空格）
     # 從正規化基底文字提取
     cap_tokens = []
     for m in CAP_RE.finditer(s):
@@ -915,7 +915,7 @@ def pipe_view(cat: str, t: Dict[str, str]) -> str:
     除錯友善的檢視字串，顯示已提取的欄位。
     工程師可用此快速調整規則。
     """
-    # V17 擴充欄位列表（新增 IEC/EIA 轉換）
+    # 擴充欄位列表（新增 IEC/EIA 轉換）
     keys = ["阻值", "阻值_IEC", "容量", "容量_EIA", "電感值", "電壓", "電流", "容差", "功率", "溫度係數",
             "介質", "顏色", "頻率", "波長", "間距", "尺寸", "封裝", "針腳數", "方向", "類型", "法規"]
     parts = [f"{k}={t.get(k,'')}" for k in keys if t.get(k, "")]
@@ -1494,7 +1494,26 @@ def main() -> None:
 
     out_dir = Path(args.out_dir).expanduser().resolve()
     sheet = args.sheet
-    model_dir = Path(args.model_dir).expanduser().resolve() if args.model_dir else None
+    
+    # 自動偵測 NER 模型資料夾
+    if args.model_dir:
+        model_dir = Path(args.model_dir).expanduser().resolve()
+    else:
+        # 自動尋找模型資料夾（依優先順序）
+        script_dir = Path(__file__).parent
+        model_candidates = [
+            script_dir / "distilbert_ner_final (不可修改)",
+            script_dir / "distilbert_ner_final",
+        ]
+        model_dir = None
+        for candidate in model_candidates:
+            if candidate.exists() and (candidate / "config.json").exists():
+                model_dir = candidate
+                if args.verbose:
+                    print(f"[資訊] 自動偵測到 NER 模型：{model_dir}")
+                break
+        if model_dir is None and args.verbose:
+            print("[資訊] 未找到 NER 模型資料夾，將以純規則模式執行")
 
     if not input_path.exists():
         raise FileNotFoundError(f"找不到輸入檔案：{input_path}")
